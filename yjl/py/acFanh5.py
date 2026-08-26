@@ -315,6 +315,23 @@ class Spider(Spider):
         'av': '57',
         'chuanmei': '58',
         'zhongkou': '59',
+        'manhua': '5',
+    }
+
+    comic_class = {
+        '': '1',
+        '最新': '1',
+        '热门推荐': '21',
+        '韩漫': '2',
+        '同人': '6',
+        '独家': '17',
+        '国漫': '11',
+        '日漫': '10',
+        '3D': '3',
+        '单行本': '7',
+        'CG/AI': '15',
+        'COS写真': '5',
+        'BL': '19',
     }
 
     filters_data = {
@@ -460,6 +477,22 @@ class Spider(Spider):
                 {'n': '恋物足交', 'v': '恋物足交'},
             ]},
         ],
+        'manhua': [
+            {'key': 'videoTag', 'name': '分类', 'value': [
+                {'n': '最新', 'v': ''},
+                {'n': '热门推荐', 'v': '热门推荐'},
+                {'n': '韩漫', 'v': '韩漫'},
+                {'n': '同人', 'v': '同人'},
+                {'n': '独家', 'v': '独家'},
+                {'n': '国漫', 'v': '国漫'},
+                {'n': '日漫', 'v': '日漫'},
+                {'n': '3D', 'v': '3D'},
+                {'n': '单行本', 'v': '单行本'},
+                {'n': 'CG/AI', 'v': 'CG/AI'},
+                {'n': 'COS写真', 'v': 'COS写真'},
+                {'n': 'BL', 'v': 'BL'},
+            ]},
+        ],
     }
 
     def getName(self): return "AcFanH5"
@@ -535,6 +568,37 @@ class Spider(Spider):
                 continue
         return None
 
+    def _api_post(self, path, params=None):
+        for _ in range(3):
+            h = self._hdr()
+            p = dict(params or {})
+            p['_t'] = h['t']
+            url = self.host + '/api' + path
+            try:
+                r = self.session.post(url, json=p, headers=h, timeout=15, verify=False, allow_redirects=False)
+                if not r.text:
+                    continue
+                new_token = r.headers.get('refresh-authorization', '') or r.headers.get('Refresh-Authorization', '')
+                if new_token:
+                    self.token = new_token
+                j = r.json()
+                if not isinstance(j, dict):
+                    return j
+                code = j.get('code', 0)
+                if code == 301:
+                    if new_token:
+                        continue
+                    return None
+                if code != 200:
+                    return None
+                if j.get('encData'):
+                    d = self._dec(j['encData'])
+                    return d if d is not None else None
+                return j.get('data') if 'data' in j else j
+            except:
+                continue
+        return None
+
     def _img(self, url, domain=None):
         if not url:
             return ''
@@ -567,19 +631,28 @@ class Spider(Spider):
             if pt == 'img' and u:
                 _pin_url_host(u)
                 r = self.session.get(u, headers={'User-Agent': self.UA, 'Referer': self.host + '/'}, timeout=15, verify=False)
-                data = bytearray(r.content)
-                key = b'2020-zq3-888'
-                for i in range(min(100, len(data))):
-                    data[i] ^= key[i % len(key)]
-                if data[:4] == b'\x89PNG':
-                    ct = 'image/png'
-                elif data[:3] == b'GIF':
-                    ct = 'image/gif'
-                elif data[:4] == b'RIFF' and data[8:12] == b'WEBP':
-                    ct = 'image/webp'
-                else:
-                    ct = 'image/jpeg'
-                return [200, ct, bytes(data)]
+
+                def _mime(d):
+                    if d[:4] == b'\x89PNG':
+                        return 'image/png'
+                    if d[:3] == b'GIF':
+                        return 'image/gif'
+                    if d[:4] == b'RIFF' and d[8:12] == b'WEBP':
+                        return 'image/webp'
+                    if d[:2] == b'\xff\xd8':
+                        return 'image/jpeg'
+                    return ''
+
+                data = bytes(r.content)
+                ct = _mime(data)
+                if not ct:
+                    data = bytearray(data)
+                    key = b'2020-zq3-888'
+                    for i in range(min(100, len(data))):
+                        data[i] ^= key[i % len(key)]
+                    data = bytes(data)
+                    ct = _mime(data) or 'image/jpeg'
+                return [200, ct, data]
             if pt == 'm3u8' and u:
                 _pin_url_host(u)
                 r = self.session.get(u, headers=self._hdr(), timeout=20, verify=False)
@@ -641,6 +714,7 @@ class Spider(Spider):
             {'type_id': 'av', 'type_name': 'AV'},
             {'type_id': 'chuanmei', 'type_name': '传媒'},
             {'type_id': 'zhongkou', 'type_name': '重口'},
+            {'type_id': 'manhua', 'type_name': '漫画'},
         ]
         videos = []
         try:
@@ -666,6 +740,8 @@ class Spider(Spider):
                 extend = {}
         if not extend:
             extend = {}
+        if str(tid) == 'manhua':
+            return self._comic_category(page, extend)
         cid = extend.get('classifyId', '')
         if not cid:
             cid = self.cat_map.get(str(tid), '')
@@ -686,6 +762,8 @@ class Spider(Spider):
         rid = ps[0] if len(ps) > 0 else vid
         name = unquote(ps[2]) if len(ps) > 2 else rid
         pic = unquote(ps[3]) if len(ps) > 3 else ''
+        if str(rid).startswith('c_'):
+            return self._comic_detail(rid[2:], name, pic)
         data = self._api('/video/getVideoById', {'videoId': rid})
         vname, vpic, vcontent, video_url, auth_key = name, pic, '', '', ''
         domain = ''
@@ -749,6 +827,89 @@ class Spider(Spider):
         if '/proxy?' in url or '/local/' in url or url.startswith('http://127.0.0.1'):
             return {'parse': 0, 'url': url, 'header': hdr}
         return {'parse': 1, 'url': url, 'header': hdr}
+
+    def _comic_category(self, page, extend):
+        vt = extend.get('videoTag', '')
+        cid = self.comic_class.get(vt, '1')
+        data = self._api_post('/comics/base/findList', {'classId': cid, 'orderType': 0, 'restricted': 0, 'page': page, 'pageSize': 20})
+        items = self._comic_parse_list(data)
+        total = data.get('total') if isinstance(data, dict) else 0
+        if total:
+            pc = -(-int(total) // 20)
+        else:
+            pc = page + 1 if items else 1
+        return {'page': page, 'pagecount': pc, 'limit': 20, 'total': total if total else pc * 20, 'list': items}
+
+    def _comic_parse_list(self, data):
+        domain = self._domain(data) if isinstance(data, dict) else ''
+        items = self._items(data)
+        res = []
+        seen = set()
+        for item in (items or []):
+            try:
+                if not isinstance(item, dict):
+                    continue
+                cid = str(item.get('comicsId') or '')
+                if not cid or cid in seen:
+                    continue
+                seen.add(cid)
+                name = str(item.get('comicsTitle') or cid)
+                pic = item.get('coverImg') or ''
+                if isinstance(pic, list):
+                    pic = pic[0] if pic else ''
+                num = str(item.get('chapterNewNum') or '')
+                sid = 'c_' + cid + '@@@' + '' + '@@@' + quote(str(name)) + '@@@' + quote(str(pic) if isinstance(pic, str) else '')
+                res.append({
+                    'vod_id': sid,
+                    'vod_name': name,
+                    'vod_pic': self._img(pic, domain),
+                    'vod_remarks': num + '话' if num and num.isdigit() else '',
+                })
+            except:
+                continue
+        return res
+
+    def _comic_detail(self, cid, name, pic):
+        data = self._api('/comics/base/info', {'comicsId': cid})
+        vname, vpic, domain, chapters = name, pic, '', []
+        tags = []
+        if isinstance(data, dict):
+            domain = data.get('domain', '')
+            vname = data.get('comicsTitle') or vname
+            vpic = data.get('coverImg') or vpic
+            chapters = data.get('chapterList') or []
+            tags = data.get('tagList') or []
+        content = '漫画'
+        tlist = []
+        for t in (tags or []):
+            if isinstance(t, dict) and t.get('title'):
+                tlist.append(str(t['title']))
+        if tlist:
+            content = '标签: ' + ' '.join(tlist)
+        play_parts = []
+        for ch in (chapters or [])[:20]:
+            try:
+                ci = self._api('/comics/base/chapterInfo', {'chapterId': ch.get('chapterId')})
+                imgs = []
+                if isinstance(ci, dict):
+                    imgs = ci.get('imgList') or []
+                pics = '&&'.join(self._img(i, domain) for i in imgs if i)
+                if not pics:
+                    continue
+                ch_name = str(ch.get('chapterTitle') or ('第%d话' % (ch.get('chapterNum') or 0)))
+                play_parts.append(ch_name + '$pics://' + pics)
+            except:
+                continue
+        vod = {
+            'vod_id': 'c_' + str(cid),
+            'vod_name': vname,
+            'vod_pic': self._img(vpic, domain),
+            'vod_content': content,
+            'vod_play_from': '图片',
+            'vod_play_url': '#'.join(play_parts),
+            'vod_tag': 'image',
+        }
+        return {'list': [vod]}
 
     def _parse_list(self, data):
         domain = self._domain(data) if isinstance(data, dict) else ''

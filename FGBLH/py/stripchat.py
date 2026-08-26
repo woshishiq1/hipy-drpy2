@@ -22,17 +22,14 @@ sys.path.append("..")
 class Spider(Spider):
 
   def init(self, extend="{}"):
-    # 1. 创建 Session
     self.create_session_with_retry()
 
-    # 2. 备用域名列表
     self.dynamic_urls = [
-        " https://zh.stripol.com/",
-        "https://zh.pikpedcams.com/",
-        "https://zh.virtualtaboo.live/",
+        "https://zh.stripchat.com",
+        "https://zh.stripchat.global",
+        "https://zh.stripol.com",
     ]
 
-    # 3. 基础 Header 及属性初始化
     self.Doppiocdn = "doppiocdn.org"
     user_agent = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101"
@@ -43,21 +40,19 @@ class Spider(Spider):
         "Accept-Language": "zh,en;q=0.5",
     }
 
-    # 默认选第一个，后续请求会轮询切换
     self.host = self.dynamic_urls[0]
     self._update_headers_for_host(self.host)
 
-    # 4. 其他配置及弹幕锁
     self.stripchat_preferredVideoCodec = "H264"  # 可选H264或AV1
     self.stripchat_key = "YzWScuyQRGAGcxx1KIJmiQ7BY9Vi35ftwLqUOVO8uoo="
     self.stripchat_pkey = "Fq6m2TO2ZeBkRPm9"
     self.stripchat_play = "0 0"
+    self.danmu_active_room = ''
     self.danmu_cache = {}
     self.danmu_threads = {}
     self.danmu_lock = threading.Lock()
 
   def _update_headers_for_host(self, host_url):
-    """根据当前使用的 Host 刷新请求头"""
     self.host = host_url
     self.headers["Origin"] = host_url
     self.headers["Referer"] = f"{host_url}/"
@@ -67,7 +62,6 @@ class Spider(Spider):
     }
 
   def _request_with_failover(self, path, timeout=(3, 5)):
-    """核心逻辑：逐个域名尝试请求列表/详情，直到成功为止"""
     urls_to_try = list(self.dynamic_urls)
     if self.host in urls_to_try:
       urls_to_try.remove(self.host)
@@ -119,15 +113,26 @@ class Spider(Spider):
     pass
 
   def destroy(self):
-    pass
+    self.danmu_active_room = ''
+    with self.danmu_lock:
+      threads = list(self.danmu_threads.items())
+      self.danmu_threads.clear()
+    for rid, (t, evt) in threads:
+      try:
+        evt.set()
+        t.join(timeout=1.0)
+      except Exception:
+        pass
 
   def homeVideoContent(self):
     pass
 
   def datetime_utc8(self, strTime, outFormat):
-    return (
-        datetime.strptime(strTime, '%Y-%m-%dT%H:%M:%SZ') + timedelta(hours=8)
-    ).strftime(outFormat)
+    try:
+      dt = datetime.strptime(str(strTime), '%Y-%m-%dT%H:%M:%SZ')
+    except Exception:
+      return ''
+    return (dt + timedelta(hours=8)).strftime(outFormat)
 
   def homeContent(self, filter):
     CLASSES = [
@@ -137,8 +142,8 @@ class Spider(Spider):
         {'type_name': '跨性别', 'type_id': 'trans'},
     ]
     VALUE = [
-        {'n': '新主播', 'v': 'autoTagNew'},
         {'n': '推荐', 'v': 'recommended'},
+		{'n': '新主播', 'v': 'autoTagNew'},
         {'n': '亚洲人', 'v': 'ethnicityAsian'},
         {'n': '🇨🇳中国', 'v': 'tagLanguageChinese'},
         {'n': '🇯🇵日本', 'v': 'tagLanguageJapanese'},
@@ -171,7 +176,7 @@ class Spider(Spider):
         {'n': '印度', 'v': 'ethnicityIndian'},
         {'n': '阿拉伯', 'v': 'ethnicityMiddleEastern'},
         {'n': '黑人', 'v': 'ethnicityEbony'},
-        {'v': 'fuckMachine', 'n': '炮机'},
+		{'v': 'fuckMachine', 'n': '炮机'},
         {'n': '青年', 'v': 'ageTeen'},
         {'n': 'VR', 'v': 'autoTagVr'},
         {'n': '✨新主播', 'v': 'autoTagNew'},
@@ -203,7 +208,7 @@ class Spider(Spider):
 
   def _parse_status_remark(self, is_live, status, viewers=0):
     if not is_live or status == 'off':
-      status_text = '已下播'
+      status_text = '⚫ 已下播'
     elif status == 'public':
       status_text = '直播中'
     else:
@@ -216,7 +221,7 @@ class Spider(Spider):
       pg_str = str(pg)
       page_num = int(pg_str)
 
-      # 1. 搜索场景逻辑
+      # 搜索场景逻辑
       if tid.startswith('search '):
         _, tag, key = tid.split(maxsplit=2)
         path = f'/api/front/v4/models/search/group/username?query={key}&limit=900&primaryTag={tag}'
@@ -232,7 +237,7 @@ class Spider(Spider):
 
           remark = self._parse_status_remark(is_live, status, viewers)
           videos.append({
-              'vod_id': str(u['username']),
+              'vod_id': str(u['id']),
               'vod_name': (
                   f"{self.country_code_to_flag(str(u.get('country', '')))}{u['username']}"
               ),
@@ -251,7 +256,7 @@ class Spider(Spider):
             'total': str(len(videos)),
         }
 
-      # 2. 普通分类列表场景逻辑
+      # 普通分类列表场景逻辑
       limit = 60
       offset = limit * (page_num - 1)
       path = f'/api/front/models?improveTs=false&removeShows=false&limit={limit}&offset={offset}&primaryTag={tid}&sortBy=stripRanking&rcmGrp=A&rbCnGr=true&prxCnGr=false&nic=false'
@@ -269,7 +274,7 @@ class Spider(Spider):
         remark = self._parse_status_remark(is_live, status, viewers)
 
         videos.append({
-            'vod_id': str(v['username']),
+            'vod_id': str(v['id']),
             'vod_name': (
                 f"{self.country_code_to_flag(str(v.get('country', '')))}{v['username']}"
             ),
@@ -300,23 +305,25 @@ class Spider(Spider):
       }
 
   def detailContent(self, array):
-    username = array[0]
+    model_id = array[0]
 
     try:
-      path = f'/api/front/v2/models/username/{username}/cam'
+      path = f'/api/front/v2/models/{model_id}/cam'
       rsp = self._request_with_failover(path)
 
       info = rsp.get('cam', {})
       user = rsp.get('user', {}).get('user', {})
-      uid, isLive = str(user.get('id', '')), user.get('isLive', False)
+      uid = str(user.get('id', model_id))
+      username = str(user.get('username', ''))
+      isLive = user.get('isLive', False)
 
       oldName = self.stripchat_play.rsplit(' ', 1)[-1]
-      if username != oldName:
+      if model_id != oldName:
         timestp = int(time.time())
-        self.stripchat_play = f'0 {timestp} {username}'
+        self.stripchat_play = f'0 {timestp} {model_id}'
       flag = self.country_code_to_flag(str(user.get('country', '')).strip())
 
-      remark = '直播中' if isLive else '已下播'
+      remark = '直播中' if isLive else '⚫ 已下播'
       show = info.get('show') or info.get('groupShowAnnouncement')
       if show:
         startAt = show.get('createdAt') or show.get('startAt')
@@ -325,18 +332,24 @@ class Spider(Spider):
               f"🎫 购票表演始于 {self.datetime_utc8(startAt, '%m月%d日 %H:%M')}"
           )
 
-      director = f'{flag}{username}'
+      director = f'{flag}{username if username else model_id}'
+      try:
+        if isLive:
+          self.start_danmu(uid)
+          self.fetch_chat_once(uid)
+      except Exception as e:
+        self.log(f'详情预取弹幕失败: {e}')
       desc = self.get_danmaku_desc(uid)
 
-      vod_play_from = '高清线路$$$标清线路二$$$标清线路三'
+      vod_play_from = '飞鱼高清$$$标清线路二$$$标清线路三'
       vod_play_url = (
           f'主线路${uid}$$$备用线路$lemon_{uid}$$$备用线路三$sacf_{uid}'
       )
 
       return {
           'list': [{
-              'vod_id': username,
-              'vod_name': str(info.get('topic', ''))[:80],
+              'vod_id': model_id,
+              'vod_name': str(info.get('topic', ''))[:80] or username,
               'vod_pic': str(user.get('avatarUrl', '')),
               'vod_director': director,
               'vod_content': desc,
@@ -369,7 +382,6 @@ class Spider(Spider):
       sid = id.split('_')[-1]
       self.start_danmu(sid)
 
-      # 统一使用动态 self.host 配置 Origin 和 Referer
       headers = {
           'User-Agent': self.headers.get('User-Agent'),
           'Origin': self.host,
@@ -379,7 +391,7 @@ class Spider(Spider):
       # --- 线路2: stripchat.global ---
       if id.startswith('lemon'):
         rsp = self.session_get(
-            f'https://edge-hls.sacdnssedge.com/hls/{sid}/master/{sid}_auto.m3u8?playlistType=lowLatency'
+            f'https://edge-hls.growcdnssedge.com/hls/{sid}/master/{sid}_auto.m3u8?playlistType=standard'
         ).text
         lines = rsp.strip().split('\n')
         for i, line in enumerate(lines):
@@ -392,7 +404,7 @@ class Spider(Spider):
       # --- 线路3: StripOl ---
       elif id.startswith('sacf'):
         rsp = self.session_get(
-            f'https://edge-hls.growcdnssedge.com/hls/{sid}/master/{sid}_auto.m3u8?playlistType=lowLatency'
+            f'https://edge-hls.sacfedge.com/hls/{sid}/master/{sid}_auto.m3u8?playlistType=standard'
         ).text
         lines = rsp.strip().split('\n')
         psch, pkey = 'v2', self.stripchat_pkey
@@ -406,7 +418,7 @@ class Spider(Spider):
       # --- 线路1: StripChat (主线路) ---
       else:
         rsp = self.session_get(
-            f'https://edge-hls.{self.Doppiocdn}/hls/{sid}/master/{sid}_auto.m3u8?playlistType=lowLatency'
+            f'https://edge-hls.{self.Doppiocdn}/hls/{sid}/master/{sid}_auto.m3u8?playlistType=standard'
         ).text
         lines = rsp.strip().split('\n')
         psch, pkey = 'v2', self.stripchat_pkey
@@ -417,7 +429,7 @@ class Spider(Spider):
             full_url = f'{lines[i+1]}&psch={psch}&pkey={pkey}&preferredVideoCodec={self.stripchat_preferredVideoCodec}'
             urls.extend([qn, f'{self.getProxyUrl()}&url={quote(full_url)}'])
 
-      # 👈 添加了 danmaku 参数关联弹幕请求接口
+      # 关联弹幕请求接口
       return {
           'url': urls,
           'parse': '0',
@@ -437,17 +449,27 @@ class Spider(Spider):
     except Exception as e:
       self.log(f'刷新详情失败: {e}')
 
-  # 👈 新增：XML 特殊字符转义处理
   def xml_escape(self, text):
     return str(text or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-  # 👈 新增：响应客户端拉取 XML 弹幕的代理处理函数
   def proxy_danmu(self, room_id):
     try:
       room_id = str(room_id)
       with self.danmu_lock:
         cache = self.danmu_cache.get(room_id, {})
-        items = cache.get('msg', [])
+        items = list(cache.get('msg', []))
+
+      # 以最新一条消息的时间为 0 点，计算每条相对偏移
+      times = []
+      for it in items:
+        ts = 0
+        try:
+          dt = datetime.strptime(str(it.get('time')), '%Y-%m-%dT%H:%M:%SZ')
+          ts = (dt + timedelta(hours=8)).timestamp()
+        except Exception:
+          ts = 0
+        times.append(ts)
+      base_ts = max(times) if times else 0
 
       xml = [
           '<?xml version="1.0" encoding="UTF-8"?>',
@@ -461,17 +483,18 @@ class Spider(Spider):
           '\t<source>stripchat</source>',
       ]
 
-      for i, item in enumerate(items[:100]):
+      for i, item in enumerate(items[-100:]):
         text = self.xml_escape(
             (str(item.get('user', '')) + ': ' if item.get('user') else '')
             + str(item.get('text', ''))
         )
+        pos = max(0.0, round(base_ts - times[i], 1)) if base_ts else round(i * 1.5, 1)
         color = (
             '16777215'
             if random.random() > 0.1
             else str(random.randint(0, 0xFFFFFF))
         )
-        xml.append(f'\t<d p="{round(i * 1.5, 1)},1,25,{color},0">{text}</d>')
+        xml.append(f'\t<d p="{pos},1,25,{color},0">{text}</d>')
 
       xml.append('</i>')
       return [200, 'text/xml', '\n'.join(xml)]
@@ -482,7 +505,6 @@ class Spider(Spider):
   def localProxy(self, param):
     type = param.get('type', '')
 
-    # 👈 新增：拦截并返回滚屏 XML 弹幕
     if type == 'danmu':
       return self.proxy_danmu(str(param.get('room', '')))
 
@@ -490,7 +512,7 @@ class Spider(Spider):
     if type == 'media':
       data = self.session_get(url, timeout=(5, 15))
       return [200, 'video/mp4', data.content]
-      
+
     rsp = self.session_get(url)
     oldCode, oldtmp, username = self.stripchat_play.rsplit(' ')
     timestp = int(time.time())
@@ -499,11 +521,17 @@ class Spider(Spider):
     if is_time_up or is_code_changed:
       self.stripchat_play = f'{rsp.status_code} {timestp} {username}'
       self.log('计划更新')
-      self.update_vod(username)
+      threading.Thread(
+          target=self.update_vod, args=(username,), daemon=True
+      ).start()
       if is_code_changed:
         self.log('code变更')
-        self.post('http://127.0.0.1:9978/action?do=refresh&type=player')
-        return [404, 'text/plain', '']
+        try:
+          rsp2 = self.session_get(url, timeout=(5, 10))
+          if rsp2.status_code == 200:
+            rsp = rsp2
+        except Exception:
+          pass
     if rsp.status_code == 403:
       rsp = self.session_get(
           re.sub(r'(_\d+p\d*)?\.m3u8', '_160p_blurred.m3u8', url)
@@ -591,6 +619,8 @@ class Spider(Spider):
 
   def start_danmu(self, room_id):
     try:
+      room_id = str(room_id)
+      self.danmu_active_room = room_id
       entry = self.danmu_threads.get(room_id)
       if entry:
         t, _ = entry
@@ -604,7 +634,7 @@ class Spider(Spider):
           self.log(f'正在关闭其他房间弹幕线程: {rid}')
           stop_evt.set()
           ot.join(timeout=1.0)
-          del self.danmu_threads[rid]
+        del self.danmu_threads[rid]
       stop_event = threading.Event()
       t = threading.Thread(
           target=self._danmu_poll_worker,
@@ -618,27 +648,31 @@ class Spider(Spider):
       self.log(f'弹幕线程启动失败: {e}')
 
   def _danmu_poll_worker(self, room_id, stop_event):
+    fail_count = 0
     while True:
-      if self.base_url:
-        try:
-          r = self.fetch(f'{self.base_url}/media', timeout=1).json()
-          if not r.get('state', False):
-            stop_event.set()
-        except:
-          stop_event.set()
-      if stop_event.is_set():
+      if self.danmu_active_room != room_id:
         break
       try:
-        self.fetch_chat_once(room_id)
-        if stop_event.wait(5):
-          break
+        got_new = self.fetch_chat_once(room_id)
+        fail_count = 0
+        # 有新消息时刷新弹幕文件 + 节流追加到详情简介
+        if got_new:
+          self.refresh_desc_if_needed(room_id)
+          if stop_event.wait(2):
+            break
+          continue
       except Exception as e:
+        fail_count += 1
         self.log(f'弹幕轮询异常 {room_id}: {e}')
-        if stop_event.wait(10):
+        if fail_count >= 10:
+          self.log(f'连续失败过多次，弹幕线程退出: {room_id}')
           break
+      if stop_event.wait(5):
+        break
     self.log(f'弹幕线程结束: {room_id}')
 
   def fetch_chat_once(self, room_id):
+    room_id = str(room_id)
     path = f'/api/front/v2/models/{room_id}/chat?source=regular&uniq={int(time.time()*1000)}'
     data = self._request_with_failover(path)
 
@@ -646,31 +680,75 @@ class Spider(Spider):
     if not isinstance(arr, list):
       return 0
     newId, newMsg = 0, []
+    oldId = 0
+    isFirst = False
     with self.danmu_lock:
       cache = self.danmu_cache.get(room_id, {})
       oldId = cache.get('id', 0)
+      isFirst = not bool(oldId)
       cacheMsg = cache.get('msg', [])
+      seen = {int(m.get('id', 0)) for m in cacheMsg}
       for raw in reversed(arr):
-        id = int(raw.get('id', 0))
-        if oldId and id <= oldId:
+        try:
+          mid = int(raw.get('id', 0))
+        except Exception:
+          continue
+        if oldId and mid <= oldId:
           break
         if not newId:
-          newId = id
+          newId = mid
+        if mid in seen:
+          continue
         item = self.normalize_chat_message(raw)
         if not item:
           continue
+        item['_mid'] = mid
         newMsg.append(item)
       if newId:
         if newMsg:
           cacheMsg = newMsg + cacheMsg
           cacheMsg = cacheMsg[:30]
         self.danmu_cache[room_id] = {'id': newId, 'msg': cacheMsg}
-    if oldId:
-      # 轮询到新弹幕时刷新弹幕文件
+    if newMsg:
+      if isFirst or self._updating_desc:
+        # 首次拉取是历史填充；刷新简介途中不重复推送实时弹幕
+        return len(newMsg)
+      # 轮询到新弹幕时刷新弹幕文件并实时推送
       self.call_local_action('do=refresh&type=danmaku', '刷新弹幕')
       for m in reversed(newMsg):
+        m.pop('_mid', None)
         self.send_live_danmaku(m)
-        time.sleep(0.15)
+        time.sleep(0.05)
+    return len(newMsg)
+
+  _desc_refresh_ts = 0
+  _updating_desc = False
+
+  def refresh_desc_if_needed(self, room_id, force=False):
+    now = int(time.time())
+    if not force and (self._updating_desc or now - self._desc_refresh_ts < 15):
+      return False
+    self._updating_desc = True
+    self._desc_refresh_ts = now
+    try:
+      model_id = str(self.stripchat_play.rsplit(' ', 1)[-1])
+      content_data = self.detailContent([model_id]).get('list')[0]
+      payload = {'json': json.dumps(content_data, ensure_ascii=False)}
+      ok = False
+      for base in [self.base_url] if self.base_url else ['http://127.0.0.1:9978']:
+        try:
+          r = self.fetch(base + '/action?do=refresh&type=vod', timeout=1)
+          r2 = self.post(base + '/action?do=refresh&type=vod', data=payload)
+          ok = True
+        except Exception:
+          continue
+      self.log(f'简介弹幕刷新: {ok}')
+      return ok
+    except Exception as e:
+      self.log(f'简介刷新失败: {e}')
+      return False
+    finally:
+      self._updating_desc = False
 
   def replace_emoji(self, text: str) -> str:
     emoji_map = {
@@ -730,6 +808,8 @@ class Spider(Spider):
         text = f'打赏 {amount} tk' if amount else '打赏'
       if not text and tp == 'lovense':
         text = 'Lovense互动'
+      if not text and tp == 'goal':
+        text = '🎯 目标更新'
       ud = msg.get('userData') or msg.get('user') or msg.get('sender') or {}
       user = ''
       if isinstance(ud, dict):
@@ -764,12 +844,12 @@ class Spider(Spider):
       self.log(f'实时弹幕发送失败: {e}')
 
   def get_danmaku_desc(self, room_id):
-    cache = self.danmu_cache.get(room_id, {})
+    cache = self.danmu_cache.get(str(room_id), {})
     cacheMsg = cache.get('msg', [])
 
     msg = []
     for item in cacheMsg:
-      t = self.datetime_utc8(item.get('time'), '%H:%M')
+      t = self.datetime_utc8(item.get('time'), '%H:%M') or '--:--'
       text = str(item.get('text', '')).strip()
       user = str(item.get('user', '')).strip()
       show = f'{t} {user}: {text}' if user else f'{t} {text}'
@@ -805,4 +885,3 @@ class Spider(Spider):
         continue
     self.log(f'失败: {log_name}')
     return False
-#弹幕还行

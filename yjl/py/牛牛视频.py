@@ -2,19 +2,22 @@
 # -*- coding: utf-8 -*-
 """
 牛牛视频 爬虫 (from APK _1.6.2.apk)
-分类参照黄豆短剧的自动获取方式: 优先从API获取, 失败回退APK内置tab_list
-API: src2 (3DES-CBC加密, dy.wnhyjc.com) + xxcjpt.com (反转base64)
+分类固定 10 个: 电影/剧集/综艺/动漫/短剧 走 src2 (3DES-CBC, dy.wnhyjc.com, 短剧=type_pid 31);
+传媒/吃瓜/福利/午夜/热舞走 xxcjpt.com (反转base64, 封面AES-128-ECB)
 """
 import base64
+import hashlib
 import json
 import os
 import re
+import socket
+import tempfile
 import time
 import uuid
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import quote, urljoin
-from Crypto.Cipher import DES3
+from urllib.parse import quote, unquote, urljoin
+from Crypto.Cipher import DES3, AES
 from Crypto.Util.Padding import pad, unpad
 
 try:
@@ -39,6 +42,72 @@ class _Crypto:
         cipher = DES3.new(key.encode("utf-8"), DES3.MODE_CBC, iv.encode("utf-8"))
         pt = unpad(cipher.decrypt(raw), DES3.block_size)
         return pt.decode("utf-8")
+
+
+# ========== DNS DoH Pin (部分数据源域名被系统 DNS 污染解析到 127.0.0.2, 用 DoH 获取真实 IP) ==========
+_PIN_MAP = {}
+_PIN_INSTALLED = [False]
+
+
+def _install_pin():
+    if _PIN_INSTALLED[0]:
+        return
+    _PIN_INSTALLED[0] = True
+    _orig = socket.getaddrinfo
+
+    def _pinned(host, port, *args, **kwargs):
+        _ips = _PIN_MAP.get(host)
+        if _ips:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port)) for ip in _ips]
+        return _orig(host, port, *args, **kwargs)
+
+    socket.getaddrinfo = _pinned
+
+
+def _doh_resolve(hostname):
+    _doh_list = [
+        "https://doh.pub/dns-query",
+        "https://dns.alidns.com/resolve",
+        "https://dns.google/resolve",
+        "https://cloudflare-dns.com/dns-query",
+    ]
+    picked = []
+    for _u in _doh_list:
+        try:
+            _r = requests.get(_u, params={"name": hostname, "type": "A"},
+                              headers={"accept": "application/dns-json"}, timeout=6, verify=False)
+            _j = _r.json()
+            for _a in _j.get("Answer", []):
+                if _a.get("type") == 1 and _a.get("data"):
+                    _d = _a["data"]
+                    if _d and not _d.startswith("0."):
+                        picked.append(_d)
+            if picked:
+                break
+        except Exception:
+            continue
+    return picked
+
+
+def _doh_pin_domain(hostname):
+    try:
+        if not hostname or hostname in _PIN_MAP:
+            return
+        _install_pin()
+        picked = _doh_resolve(hostname)
+        if picked:
+            _PIN_MAP[hostname] = picked
+    except Exception:
+        pass
+
+
+def _pin_url_host(url):
+    try:
+        _m = re.match(r"https?://([^/:]+)", url or "")
+        if _m:
+            _doh_pin_domain(_m.group(1))
+    except Exception:
+        pass
 
 
 class Spider(BaseSpider):
@@ -71,6 +140,7 @@ class Spider(BaseSpider):
         self.filter_cache = {}
         self.token_time = 0
         self.page_size = 20
+        # xxcjpt.com 成人源 (传媒/吃瓜/福利/午夜/热舞)
         self._xxcjpt_token = "66b30e51a0ab342bc76502b698399356"
         self._xxcjpt_headers = {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -108,7 +178,8 @@ class Spider(BaseSpider):
         if self.token and time.time() - self.token_time < 3600:
             return
         try:
-            r = self.session.post(self.init_url, data="password=&account=", timeout=15, verify=False)
+            r = requests.post(self.init_url, data="password=&account=", timeout=15, verify=False,
+                              headers=self.session.headers)
             r.raise_for_status()
             data = self._decrypt(r.json().get("data", ""))
             if data and data.get("code") == 10000:
@@ -142,12 +213,18 @@ class Spider(BaseSpider):
         headers = dict(self.session.headers)
         if self.token:
             headers["token"] = self.token
-        try:
-            r = self.session.post(url, data=params or {}, headers=headers, timeout=15, verify=False)
-            r.raise_for_status()
-            return self._decrypt(r.json().get("data", ""))
-        except Exception:
-            return {}
+        for attempt in range(2):
+            try:
+                r = requests.post(url, data=params or {}, headers=headers, timeout=15, verify=False)
+                r.raise_for_status()
+                data = self._decrypt(r.json().get("data", ""))
+                if data:
+                    return data
+            except Exception:
+                pass
+            if attempt == 0:
+                time.sleep(1)
+        return {}
 
     def _xxcjpt_decode(self, text):
         """xxcjpt.com响应: 反转字符串 → base64解码 → JSON"""
@@ -173,18 +250,54 @@ class Spider(BaseSpider):
         except Exception:
             return None
 
-    # ========== 自动获取分类 (参照黄豆短剧 _classes) ==========
-    # APK内置tab_list分类 (从tab_list_json_default.json提取)
+    # ========== 固定分类 (电影/剧集/综艺/动漫/短剧=src2, 传媒/吃瓜/福利/午夜/热舞=xxcjpt) ==========
     _FALLBACK_CLASSES = [
         {"type_id": "1", "type_name": "电影"},
         {"type_id": "2", "type_name": "剧集"},
         {"type_id": "3", "type_name": "综艺"},
         {"type_id": "4", "type_name": "动漫"},
         {"type_id": "5", "type_name": "短剧"},
-        {"type_id": "10", "type_name": "热舞"},
         {"type_id": "7", "type_name": "传媒"},
-        {"type_id": "11", "type_name": "直播"},
+        {"type_id": "8", "type_name": "吃瓜"},
+        {"type_id": "9", "type_name": "福利"},
+        {"type_id": "10", "type_name": "午夜"},
+        {"type_id": "11", "type_name": "热舞"},
     ]
+
+    # src2 各分类的 id 簇 (枚举实测: 内容按 id 段聚集, 段间有巨大空洞)
+    _SRC2_CLUSTERS = {
+        "1": [(1, 7000), (100000, 101000)],
+        "2": [(100000, 103000), (155000, 155600)],
+        "3": [(100000, 103000), (155000, 155600)],
+        "4": [(100000, 103000), (155000, 155600)],
+        "5": [(155000, 160000), (100000, 100300)],
+    }
+
+    # 分类tid → src2 type_pid 映射 (电影/剧集/综艺/动漫/短剧 走src2; 短剧=pid 31)
+    _PID_MAP = {"1": "1", "2": "2", "3": "3", "4": "4", "5": "31"}
+
+    # 每分类每页扫描的 id 数 (按实测密度定制; 实际每页扫描 step*2 个 id, 控制在 src2 限流阈值内)
+    _SRC2_STEP = {"1": 70, "2": 30, "3": 60, "4": 60, "5": 70}
+
+    # xxcjpt.com 各分类的关键词过滤 (传媒按子分类, 其余按整分类; 短剧走src2)
+    _XC_KEYWORDS = {
+        "5": ["剧情", "人妻", "二次元", "JK", "女仆", "制服", "cos", "nana", "狐不妖"],
+        "7": {
+            "探花偷拍": ["探花", "偷拍", "约炮", "网约", "外卖", "上门", "真实", "自拍"],
+            "剧情人妻": ["剧情", "人妻", "姐夫", "嫂子", "表妹", "邻居", "出轨", "小三", "房东"],
+            "丝袜制服": ["丝袜", "黑丝", "白丝", "制服", "足交", "高跟鞋", "包臀"],
+            "萝莉调教": ["萝莉", "调教", "少女", "校花", "青春", "清纯"],
+            "熟女阿姨": ["熟女", "阿姨", "妈妈", "丰满", "丰腴", "熟妇"],
+            "国产自拍": ["国产", "自拍", "素人", "偷拍"],
+        },
+        "8": ["吃瓜", "偷拍", "泄密", "爆料", "真实", "网约", "曝光", "泄露"],
+        "9": ["福利", "私拍", "独家", "泄露", "流出"],
+        "10": ["午夜", "深夜", "夜色", "凌晨", "夜间", "夜夜"],
+        "11": ["舞蹈", "热舞", "秀场", "直播", "扭腰", "钢管"],
+    }
+
+    # xxcjpt index 的 spm 参数, 不同分类使用不同 spm 以增加内容差异
+    _XC_SPM = {"5": "latest", "7": "home.latest", "8": "home.hot", "9": "home.new", "10": "home.recommend", "11": "latest"}
 
     _FALLBACK_FILTERS = {
         "1": {
@@ -212,46 +325,22 @@ class Spider(BaseSpider):
             "year": "2027,2026,2025,2024,2023,2022,2021,2020,2019,2018,2017,2016,2015,2014,2013,2012,2011,2010,2009,2008,2007,2006,2005,2004,2003,2002,2001,1999,1998",
         },
         "5": {
-            "class": "都市,反转,萌宝,古装,逆袭,喜剧,闪婚,王妃,校园,民国,年代,脑洞,总裁",
+            "class": "都市,古风,玄幻,漫剧,逆袭,年代,总裁,大女主,大男主,家庭,喜剧,重生,穿越,悬疑",
         },
         "7": {
-            "class": "麻豆,果冻,蜜桃,精东,糖心,天美,星空,玩偶,探花",
-        },
-        "10": {
-            "class": "",
+            "class": "探花偷拍,剧情人妻,丝袜制服,萝莉调教,熟女阿姨,国产自拍",
         },
     }
 
     def _classes(self):
-        """自动获取分类 — 参照黄豆短剧: 优先API获取, 失败回退内置"""
+        """固定分类列表 (短剧/电影/剧集/综艺/动漫=src2, 成人分类来自xxcjpt)"""
         if self.class_cache:
             return self.class_cache
-
-        arr = []
-        # 1) 尝试从src2 API获取分类列表 (API无分类端点, 会失败)
-        try:
-            data = self._api_post("/api/vod/category", {})
-            if not data:
-                data = self._api_post("/api/vod/type", {})
-            items = self._list(data)
-            if items:
-                for item in items:
-                    tid = str(item.get("type_id") or item.get("id") or "")
-                    name = item.get("type_name") or item.get("name") or tid
-                    if tid and name:
-                        arr.append({"type_id": tid, "type_name": name})
-        except Exception:
-            pass
-
-        # 2) API失败 → 回退APK内置分类 (等同黄豆短剧的 _FALLBACK_CLASSES)
-        if not arr:
-            arr = [dict(c) for c in self._FALLBACK_CLASSES]
-
-        self.class_cache = arr
-        return arr
+        self.class_cache = [dict(c) for c in self._FALLBACK_CLASSES]
+        return self.class_cache
 
     def _filters(self, classes):
-        """生成筛选 — 参照黄豆短剧 _filters, 从APK tab_list的type_extend提取"""
+        """生成筛选, 从固定分类表提取"""
         fs = {}
         for c in classes:
             tid = c["type_id"]
@@ -310,52 +399,223 @@ class Spider(BaseSpider):
         extend = extend or {}
         pg = int(pg) if str(pg).isdigit() else 1
 
-        # 热舞/传媒类: 用xxcjpt.com源 (vid从10000起)
-        if str(tid) in ("10", "7"):
-            return self._xxcjpt_category(tid, pg, extend)
+        # 短剧/电影/剧集/综艺/动漫: src2 API 按 id 簇扫描过滤 type_pid
+        if str(tid) in ("1", "2", "3", "4", "5"):
+            return self._src2_category(tid, pg, extend)
 
-        # 电影/剧集/综艺/动漫/短剧: 用src2 API并发枚举vod_id
-        batch_size = 40
-        start = (pg - 1) * batch_size + 1
-        vid_list = list(range(start, start + batch_size))
-        batch = self._fetch_batch(vid_list, max_workers=10)
+        # 传媒/吃瓜/福利/午夜/热舞: xxcjpt.com 成人源 (传媒按子分类关键词)
+        return self._xxcjpt_category(tid, pg, extend)
+
+    def _src2_pool(self, tid):
+        """拼接该分类的候选 id 簇 (src2内容按id段聚集, 段间有空洞)"""
+        pool = []
+        for lo, hi in self._SRC2_CLUSTERS.get(str(tid), []):
+            pool.extend(range(lo, hi))
+        return pool
+
+    def _cache_dir(self):
+        try:
+            d = os.path.join(tempfile.gettempdir(), "niuniu_py")
+            os.makedirs(d, exist_ok=True)
+            return d
+        except Exception:
+            return tempfile.gettempdir()
+
+    def _src2_category(self, tid, pg, extend):
+        """src2分类: 从候选id簇中扫描, 过滤 type_pid (控制扫描量避免触发限流)"""
+        want_pid = self._PID_MAP.get(str(tid), str(tid))
+        pool = self._src2_pool(tid)
+        if not pool:
+            return {"page": pg, "pagecount": pg, "limit": self.page_size, "total": 0, "list": []}
+
+        # 分类页缓存: 降低 src2 请求压力, 规避限流
+        cache_key = "cat_%s_%s_%s" % (tid, pg, extend.get("class") or "")
+        cache_path = os.path.join(self._cache_dir(), cache_key + ".json")
+        try:
+            if os.path.exists(cache_path) and time.time() - os.path.getmtime(cache_path) < 1800:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    cached = json.load(f)
+                if cached.get("list"):
+                    return cached
+        except Exception:
+            pass
+
+        total = len(pool)
+        step = self._SRC2_STEP.get(str(tid), 100)
+        start = ((pg - 1) * step) % total
+        picked = []
+        seen = set()
+        for k in range(2):
+            for i in range(step):
+                v = pool[(start + k * step + i) % total]
+                if v not in seen:
+                    seen.add(v)
+                    picked.append(v)
+
+        batch = self._fetch_batch(picked, max_workers=12)
+
+        # src2 有请求速率限制: 批量请求成功率过低时等待后重试一次
+        if len(batch) < max(1, len(picked) * 0.3):
+            time.sleep(3)
+            batch = self._fetch_batch(picked, max_workers=12)
+
         items = []
         for vid in sorted(batch.keys()):
             result = batch[vid]
-            type_pid = str(result.get("type_pid", ""))
-            if type_pid == str(tid):
+            pid = str(result.get("type_pid", ""))
+            tags = result.get("tags") or ""
+            is_short = "短剧" in tags
+            if str(tid) == "5":
+                # 短剧: type_pid=31 或 tags 含"短剧" (100000 段的短剧标为 pid=2)
+                ok = pid == "31" or is_short
+            elif str(tid) == "2":
+                # 剧集: type_pid=2 且排除短剧
+                ok = pid == "2" and not is_short
+            else:
+                ok = pid == want_pid
+            if ok:
                 if self._match_filter(result, extend):
                     items.append(self._vod_from_detail(result))
             if len(items) >= self.page_size:
                 break
 
         pagecount = pg + 1 if items else pg
-        return {
+        result = {
             "page": pg,
             "pagecount": pagecount,
             "limit": self.page_size,
             "total": 99999,
             "list": items,
         }
+        if items:
+            try:
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(result, f, ensure_ascii=False)
+            except Exception:
+                pass
+        return result
+
+    def _xxcjpt_index(self, spm, page, pages=4):
+        """翻页获取 xxcjpt index 内容列表 [{id,title,image,duration}]"""
+        out = []
+        seen = set()
+        for p in range(page, page + pages):
+            try:
+                r = requests.post(
+                    "https://sixth.xxcjpt.com/java/index",
+                    data="token=%s&spm=%s&page=%d" % (self._xxcjpt_token, spm, p),
+                    headers=self._xxcjpt_headers, timeout=12, verify=False,
+                )
+                data = self._xxcjpt_decode(r.text)
+                lst = (data or {}).get("data", {}).get("list", []) or []
+                for it in lst:
+                    if it.get("id") is not None and it["id"] not in seen:
+                        seen.add(it["id"])
+                        out.append(it)
+            except Exception:
+                break
+            if len(out) >= pages * 20:
+                break
+        return out
+
+    def _xx_img(self, url):
+        """xxcjpt封面: 返回本地代理URL, 由localProxy解密(AES-128-ECB)"""
+        if not url:
+            return ""
+        try:
+            b = self.getProxyUrl()
+            if "?" not in b:
+                b += "?do=py"
+            return b + "&type=img&url=" + quote(url, safe="")
+        except Exception:
+            return url
+
+    def localProxy(self, param):
+        """本地代理: 解密xxcjpt封面(AES-128-ECB)"""
+        try:
+            if not isinstance(param, dict):
+                param = {}
+            pt = param.get("type") or param.get("do") or ""
+            u = param.get("url", "")
+            if pt == "img" and u:
+                r = requests.get(unquote(u), headers=self._xxcjpt_headers, timeout=15, verify=False)
+                ct = base64.b64decode(r.text.strip())
+                cipher = AES.new(b"976f97d638360cde", AES.MODE_ECB)
+                data = unpad(cipher.decrypt(ct), AES.block_size)
+                m = re.match(rb"^data:(.*?);base64,(.*)$", data)
+                if m:
+                    img = base64.b64decode(m.group(2))
+                    return [200, m.group(1).decode("ascii"), img]
+            return [404, "text/plain", b"nf"]
+        except Exception:
+            return [500, "text/plain", b"err"]
+
+    def _xx_item(self, it):
+        return {
+            "vod_id": "x_%s" % it.get("id"),
+            "vod_name": it.get("title", "") or "",
+            "vod_pic": self._xx_img(it.get("image", "") or ""),
+            "vod_remarks": self._format_duration(it.get("duration", 0)),
+        }
 
     def _xxcjpt_category(self, tid, pg, extend):
-        """xxcjpt.com分类: 热舞(tid=10) 传媒(tid=7)"""
-        page_size = 20
-        start = (pg - 1) * page_size + 10000
+        """xxcjpt.com分类: 传媒(tid=7, 按子分类关键词) / 吃瓜(8) / 福利(9) / 午夜(10) / 热舞(11)"""
+        page_size = self.page_size
+        tid = str(tid)
+        spm = self._XC_SPM.get(tid, "home.latest")
+
+        kws = []
+        if tid == "7":
+            sub = extend.get("class") or ""
+            kws = self._XC_KEYWORDS["7"].get(sub, [])
+        elif tid in self._XC_KEYWORDS:
+            kws = self._XC_KEYWORDS[tid]
+
         items = []
-        for vid in range(start, start + page_size):
-            data = self._xxcjpt_get(str(vid))
-            if data and data.get("code") == 1:
-                video = data.get("data", {}).get("video", {})
-                if video and video.get("title"):
-                    items.append({
-                        "vod_id": "x_%s" % video.get("id", vid),
-                        "vod_name": video.get("title", ""),
-                        "vod_pic": video.get("image", ""),
-                        "vod_remarks": self._format_duration(video.get("duration", 0)),
-                    })
-            if len(items) >= page_size:
-                break
+
+        # 吃瓜分类: 优先枚举探花真实段 (id 10000+) 补充真实事件内容
+        if tid == "8":
+            x_start = 10000 + (pg - 1) * 10
+            x_vids = list(range(x_start, x_start + 10))
+            def x_fetch(vid):
+                data = self._xxcjpt_get(str(vid))
+                if data and data.get("code") == 1:
+                    v = data.get("data", {}).get("video", {})
+                    if v and v.get("title"):
+                        return self._xx_item(v)
+                return None
+            with ThreadPoolExecutor(max_workers=10) as pool:
+                futures = [pool.submit(x_fetch, vid) for vid in x_vids]
+                for f in as_completed(futures):
+                    r = f.result()
+                    if r:
+                        items.append(r)
+                    if len(items) >= page_size:
+                        break
+
+        feed = self._xxcjpt_index(spm, pg, pages=4)
+        picked = []
+        for it in feed:
+            title = it.get("title") or ""
+            if not title:
+                continue
+            if not kws or any(k in title for k in kws):
+                picked.append(it)
+
+        if len(items) < page_size:
+            for it in picked:
+                items.append(self._xx_item(it))
+                if len(items) >= page_size:
+                    break
+
+        # 关键词命中不足 → 用最新流兜底, 保证分类有内容
+        if len(items) < page_size:
+            for it in feed:
+                if it in picked:
+                    continue
+                items.append(self._xx_item(it))
+                if len(items) >= page_size:
+                    break
 
         pagecount = pg + 1 if items else pg
         return {
@@ -363,7 +623,7 @@ class Spider(BaseSpider):
             "pagecount": pagecount,
             "limit": page_size,
             "total": 99999,
-            "list": items,
+            "list": items[:page_size],
         }
 
     def detailContent(self, ids):
@@ -374,7 +634,12 @@ class Spider(BaseSpider):
             return self._xxcjpt_detail(vid[2:])
 
         # src2源
-        data = self._api_post(self.list_url, {"vod_id": vid})
+        data = {}
+        for _ in range(3):
+            data = self._api_post(self.list_url, {"vod_id": vid})
+            if data.get("result"):
+                break
+            time.sleep(2)
         result = data.get("result")
 
         if not result or not isinstance(result, dict):
@@ -392,13 +657,17 @@ class Spider(BaseSpider):
 
         map_list = result.get("map_list") or []
         eps = []
+        seen_eps = set()
         for m in map_list:
             mid = str(m.get("id", ""))
-            title = m.get("title") or "高清"
-            collection = m.get("collection", 1)
-            if collection > 1:
-                for i in range(1, collection + 1):
-                    eps.append("第%s集$%s_%s" % (i, vid, mid))
+            title = str(m.get("title") or "高清")
+            # 数字标题 = 集数 (短剧/动漫每集一个 map); 其余为清晰度/分组名
+            if title.isdigit():
+                key = ("ep", title)
+                if key in seen_eps:
+                    continue
+                seen_eps.add(key)
+                eps.append("第%s集$%s_%s" % (title, vid, mid))
             else:
                 eps.append("%s$%s_%s" % (title, vid, mid))
 
@@ -443,7 +712,7 @@ class Spider(BaseSpider):
         vod = {
             "vod_id": "x_%s" % vid,
             "vod_name": title,
-            "vod_pic": pic,
+            "vod_pic": self._xx_img(pic),
             "vod_year": "",
             "vod_area": "",
             "type_name": "",
@@ -459,11 +728,17 @@ class Spider(BaseSpider):
     def searchContent(self, key, quick, pg="1"):
         pg = int(pg) if str(pg).isdigit() else 1
 
-        # 1) src2 API: 并发枚举vod_id, 匹配标题/演员/导演
-        search_range = 100
-        start = (pg - 1) * search_range + 1
-        vid_list = list(range(start, start + search_range))
-        batch = self._fetch_batch(vid_list, max_workers=15)
+        # 1) src2 API: 并发枚举多个id簇, 匹配标题/演员/导演
+        #    (电影簇1-100 + 剧集/综艺/动漫簇100000-100060 + 短剧簇155000-155040)
+        search_segments = [
+            range(1, 101),
+            range(100000, 100070),
+            range(155000, 155050),
+        ]
+        vids = []
+        for seg in search_segments:
+            vids.extend(seg)
+        batch = self._fetch_batch(vids, max_workers=20)
         items = []
         for vid in sorted(batch.keys()):
             result = batch[vid]
@@ -475,11 +750,9 @@ class Spider(BaseSpider):
             if len(items) >= 20:
                 break
 
-        # 2) xxcjpt.com: 并发搜索 (从10000起, 每页搜索50个)
+        # 2) xxcjpt.com: 并发枚举 10000 段, 匹配标题
         if len(items) < 10:
-            x_start = 10000 + (pg - 1) * 50
-            x_vids = list(range(x_start, x_start + 50))
-            x_items = []
+            x_vids = list(range(10000, 10060))
             def x_search(vid):
                 data = self._xxcjpt_get(str(vid))
                 if data and data.get("code") == 1:
@@ -492,7 +765,7 @@ class Spider(BaseSpider):
                             "vod_remarks": self._format_duration(video.get("duration", 0)),
                         }
                 return None
-            with ThreadPoolExecutor(max_workers=10) as pool:
+            with ThreadPoolExecutor(max_workers=12) as pool:
                 futures = [pool.submit(x_search, vid) for vid in x_vids]
                 for f in as_completed(futures):
                     r = f.result()
@@ -582,6 +855,8 @@ class Spider(BaseSpider):
         }
 
     def _match_filter(self, result, extend):
+        if extend.get("class") and extend["class"] not in (result.get("tags") or ""):
+            return False
         if extend.get("area") and extend["area"] not in (result.get("area") or ""):
             return False
         if extend.get("year") and extend["year"] != (result.get("year") or ""):
