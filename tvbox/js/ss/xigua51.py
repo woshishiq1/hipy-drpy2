@@ -60,6 +60,9 @@ class Spider(Spider):
         }
         self.session = Session()
         self.session.verify = False
+        # 先通过发布站动态刷新 FALLBACK_HOSTS, 再参与测速选线,
+        # 避免静态备用域名失效导致概率性拿不到分类
+        self.refresh_fallback_hosts()
         hosts = []
         try:
             ok = self.getCache('host_51ok')
@@ -67,12 +70,6 @@ class Spider(Spider):
                 hosts.append(ok)
         except Exception:
             pass
-        gl = self.gethosts()
-        if isinstance(gl, str):
-            gl = [u.strip() for u in gl.split(',') if u.strip()]
-        for u in (gl or []):
-            if u not in hosts:
-                hosts.append(u)
         for u in self.FALLBACK_HOSTS:
             if u not in hosts:
                 hosts.append(u)
@@ -85,6 +82,45 @@ class Spider(Spider):
         self.session.headers.update(self.headers)
         thread = threading.Thread(target=self.getcnh)
         thread.start()
+
+    def _candidates(self, current_host=None):
+        """换线候选列表: FALLBACK_HOSTS + domin(去重、排除当前host)"""
+        cur = current_host if current_host is not None else self.host
+        out = []
+        for u in list(self.FALLBACK_HOSTS) + [self.domin]:
+            if u and u != cur and u not in out:
+                out.append(u)
+        return out
+
+    def refresh_fallback_hosts(self):
+        """通过发布站(self.domin)动态更新 FALLBACK_HOSTS:
+        1. appConfig AES解密取 domain/backup_domain
+        2. 失败则回退 get_domains() JS随机线路
+        """
+        try:
+            hosts = []
+            gl = self.gethosts()
+            if isinstance(gl, str):
+                gl = [u.strip() for u in gl.split(',') if u.strip()]
+            if gl:
+                hosts.extend(gl)
+            if not hosts:
+                try:
+                    hosts = self.get_domains()
+                    self.log(f"JS线路回退: {hosts}")
+                except Exception as e:
+                    self.log(f"get_domains回退失败: {e}")
+            fresh = [u for u in hosts if u]
+            if fresh:
+                # 动态线路放前面, 静态兜底域名放后面
+                merged = list(fresh)
+                for u in self.FALLBACK_HOSTS:
+                    if u not in merged:
+                        merged.append(u)
+                self.FALLBACK_HOSTS = merged
+                self.log(f"FALLBACK_HOSTS已刷新: {self.FALLBACK_HOSTS}")
+        except Exception as e:
+            self.log(f"refresh_fallback_hosts异常: {e}")
 
     def switch_host(self, host):
         """运行期切换线路并同步请求头"""
@@ -122,7 +158,7 @@ class Spider(Spider):
             return self.pq(self.req(url).content)
         except Exception as e:
             self.log(f"请求失败换线: {e}")
-        candidates = [u for u in (list(self.FALLBACK_HOSTS) + [self.domin]) if u != self.host]
+        candidates = self._candidates()
         for h in candidates:
             try:
                 nurl = path_or_url if path_or_url.startswith('http') else f"{h}{path_or_url}"
@@ -146,9 +182,8 @@ class Spider(Spider):
     def destroy(self):
         pass
 
-    def homeContent(self, filter):
-        data=self.getdoc('/')
-        result = {}
+    def _parse_home(self, data):
+        """解析首页导航分类"""
         classes = []
         for k in list(data('.navbar-nav.mr-auto').children('li').items())[1:-3]:
             if k('ul'):
@@ -162,32 +197,36 @@ class Spider(Spider):
                     'type_name': k('a').text(),
                     'type_id': k('a').attr('href').strip(),
                 })
+        return classes
+
+    def homeContent(self, filter):
+        data=self.getdoc('/')
+        result = {}
+        classes = self._parse_home(data)
         lst = self.getlist(data('#index article a'))
+        # 空壳页(有响应但无内容)概率性出现: 逐线路重试,
+        # 全部失败则强制刷新 FALLBACK_HOSTS 后再试一轮
         if not classes or not lst:
-            for h in [u for u in list(self.FALLBACK_HOSTS) + [self.domin] if u != self.host]:
-                try:
-                    nd = self.pq(self.req(f"{h}/", timeout=8).content)
-                    ncls = len(nd('.navbar-nav.mr-auto')('li'))
-                    nlst = self.getlist(nd('#index article a'))
-                    if ncls and nlst:
-                        self.switch_host(h)
-                        self.log(f"空壳页换线成功: {h}")
-                        data, classes, lst = nd, None, nlst
-                        for k in list(nd('.navbar-nav.mr-auto').children('li').items())[1:-3]:
-                            if k('ul'):
-                                for j in k('ul li').items():
-                                    classes.append({
-                                        'type_name': j('a').text(),
-                                        'type_id': j('a').attr('href').strip(),
-                                    })
-                            else:
-                                classes.append({
-                                    'type_name': k('a').text(),
-                                    'type_id': k('a').attr('href').strip(),
-                                })
-                        break
-                except Exception:
-                    continue
+            for rnd in range(2):
+                candidates = self._candidates()
+                if rnd == 1:
+                    self.log("空壳页首轮重试失败, 刷新FALLBACK_HOSTS后再试")
+                    self.refresh_fallback_hosts()
+                    candidates = [u for u in self._candidates() if u not in candidates]
+                for h in candidates:
+                    try:
+                        nd = self.pq(self.req(f"{h}/", timeout=8).content)
+                        nlst = self.getlist(nd('#index article a'))
+                        ncls = self._parse_home(nd)
+                        if ncls and nlst:
+                            self.switch_host(h)
+                            self.log(f"空壳页换线成功: {h}")
+                            data, classes, lst = nd, ncls, nlst
+                            break
+                    except Exception:
+                        continue
+                if classes and lst:
+                    break
         result['class'] = classes
         result['list'] = lst
         return result
@@ -203,18 +242,28 @@ class Spider(Spider):
             pg=int(pg or '1')
             tid=str(tid).strip('/')
             videos=self.getlist(self.getdoc(f"/{tid}/" if pg==1 else f"/{tid}/{pg}/"),f"/{tid}")
+            # 空壳/空列表概率性出现: 逐线路重试,
+            # 全部失败则强制刷新 FALLBACK_HOSTS 后再试一轮
             if not videos:
-                for h in [u for u in list(self.FALLBACK_HOSTS) + [self.domin] if u != self.host]:
-                    try:
-                        nd = self.pq(self.req(f"{h}/{tid}/" if pg==1 else f"{h}/{tid}/{pg}/", timeout=8).content)
-                        nv = self.getlist(nd('#archive article a'), f"/{tid}")
-                        if nv:
-                            self.switch_host(h)
-                            self.log(f"分类页换线成功: {h}")
-                            videos = nv
-                            break
-                    except Exception:
-                        continue
+                for rnd in range(2):
+                    candidates = self._candidates()
+                    if rnd == 1:
+                        self.log("分类页首轮重试失败, 刷新FALLBACK_HOSTS后再试")
+                        self.refresh_fallback_hosts()
+                        candidates = [u for u in self._candidates() if u not in candidates]
+                    for h in candidates:
+                        try:
+                            nd = self.pq(self.req(f"{h}/{tid}/" if pg==1 else f"{h}/{tid}/{pg}/", timeout=8).content)
+                            nv = self.getlist(nd('#archive article a'), f"/{tid}")
+                            if nv:
+                                self.switch_host(h)
+                                self.log(f"分类页换线成功: {h}")
+                                videos = nv
+                                break
+                        except Exception:
+                            continue
+                    if videos:
+                        break
         result = {}
         result['list'] = videos
         result['page'] = pg

@@ -2,13 +2,22 @@
  "spider": "./jar/WvSpider.jar",
  "sites": [
   {
-   "type": "2",
-   "key": "app_settings",
-   "name": "应用设置",
-   "type_flag": "settings",
-   "land": 0,
-   "circle": 0,
-   "ratio": 1.0
+   "key": "wv_mcp",
+   "name": "WvMcp 服务",
+   "api": "csp_WvMcp",
+   "type": 3,
+   "ext": {
+    "enabled": true,
+    "mcpEnabled": true,
+    "port": 19978
+   }
+  },
+  {
+   "key": "wv_push",
+   "name": "Push | 推送",
+   "api": "csp_Push",
+   "type": 3,
+   "hide": 1
   },
   {
    "key": "wv_3q",

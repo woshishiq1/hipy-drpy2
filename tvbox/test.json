@@ -14,6 +14,16 @@
    "key": "youtube2",
    "name": "YouTube",
    "type": 3,
+   "api": "csp_Youtube",
+   "jar": "./jar/yt2.jar",
+   "searchable": 1,
+   "changeable": 0,
+   "ext": "./lib/youtube.json"
+  },
+  {
+   "key": "youtube3",
+   "name": "YouTube",
+   "type": 3,
    "api": "./py/yt_clun.py",
    "searchable": 1,
    "quickSearch": 1,
