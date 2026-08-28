@@ -48,6 +48,13 @@ var index_config_default = {
     username: "",
     password: ""
   },
+  pikpak: {
+    username: "",
+    password: "",
+    refresh_token: "",
+    device_id: "",
+    user_id: ""
+  },
   pan123: {
     username: "",
     password: ""
@@ -86,7 +93,7 @@ var index_config_default = {
     urls: ["http://shandian.blog", "https://sd.sduc.site"]
   },
   wouniu: {
-    urls: ["https://zmi.kdns.fr"]
+    urls: ["https://wn4k.com"]
   },
   tgsou: {
     tgPic: true,

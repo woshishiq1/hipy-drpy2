@@ -10,6 +10,8 @@
 - 首页:   GET /main
 - 详情:   GET /detail?vod_id=X   (sources[].episodes[].url, 含 player_id)
 - 播放:   player_id → 解析器URL → JSON {code,url,headers}
+- 路线:   多播放源用 $$$ 分隔(集内 #, 集 $), 显示 APP 中文线路名(player_name)
+- 短剧:   keymp4 为 CENC 加密 mp4+key, 经 _KEYMP4_PROXY 解密代理(见 keymp4_proxy.py)输出明文
 响应 AES/ECB/PKCS5 加密, key = "/path?query" 截断16位(不足补"0")
 """
 import base64
@@ -33,6 +35,10 @@ class Spider(BaseSpider):
 
     # 主 API 域名(APP 默认 base_url, 可在 extend 中覆盖)
     _HOST = "https://nn.123xiangshang.com:35620"
+
+    # 短剧(keymp4)解密代理服务地址, 留空则返回原始加密 mp4(标准播放器无法直接播放)
+    # 部署: python3 keymp4_proxy.py --port 8765  (依赖 ffmpeg)
+    _KEYMP4_PROXY = "https://8765-abb3ee7c09cf0bb4.monkeycode-ai.online"
 
     # 请求头(与 APP 拦截器一致: p/pkg/t/d/v/y/product/sys)
     _HEADERS = {
@@ -114,9 +120,9 @@ class Spider(BaseSpider):
     def _get(self, path, params=None):
         """GET 主API, 返回解密后的 dict"""
         raw_q = "&".join("%s=%s" % (k, v) for k, v in (params or {}).items())
-        encoded_q = quote(raw_q, safe=self._SAFE)
-        url = self.host + "/" + path + ("?" + encoded_q if encoded_q else "")
-        pathq = "/" + path + ("?" + encoded_q if encoded_q else "")
+        suffix = path + ("?" + quote(raw_q, safe=self._SAFE) if raw_q else "")
+        url = self.host + "/" + suffix
+        pathq = "/" + suffix
         try:
             r = self.session.get(url, headers=self._HEADERS, timeout=15)
             return self._decrypt(pathq, r.text)
@@ -155,6 +161,31 @@ class Spider(BaseSpider):
                 mapping[pid] = y_url
         self.parsers_cache = mapping
         return mapping
+
+    def _player_names(self):
+        """动态构建 player_id → APP 中文线路名(来自 /config parser.player_name), 空名回退 pid"""
+        cfg = self._config()
+        names = {}
+        for p in cfg.get("parser") or []:
+            pid = p.get("player_id")
+            if not pid:
+                continue
+            name = (p.get("player_name") or "").strip()
+            names[pid] = name if name else pid
+        return names
+
+    def _list_params(self, wd="", tid="", cls="", order="最新", area="", year="", pg="1"):
+        """构造 /list 请求参数(列表/搜索/首页回退共用)"""
+        return {
+            "class": cls,
+            "order": order,
+            "type_id": str(tid),
+            "area": area,
+            "year": year,
+            "state": "",
+            "wd": wd,
+            "page": str(pg),
+        }
 
     # ========== 分类与筛选 ==========
 
@@ -235,8 +266,7 @@ class Spider(BaseSpider):
             for v in block.get("list") or []:
                 items.append(self._vod_from_list(v))
         if not items:
-            j = self._get("list", {"class": "", "order": "最新", "type_id": "5",
-                                   "area": "", "year": "", "state": "", "wd": "", "page": "1"})
+            j = self._get("list", self._list_params(tid="5"))
             items = [self._vod_from_list(v) for v in (j or {}).get("data") or []]
 
         return {
@@ -246,8 +276,7 @@ class Spider(BaseSpider):
         }
 
     def homeVideoContent(self):
-        j = self._get("list", {"class": "", "order": "最新", "type_id": "5",
-                               "area": "", "year": "", "state": "", "wd": "", "page": "1"})
+        j = self._get("list", self._list_params(tid="5"))
         items = [self._vod_from_list(v) for v in (j or {}).get("data") or []]
         return {"list": items}
 
@@ -260,16 +289,10 @@ class Spider(BaseSpider):
             if k.startswith("class_more") and v:
                 cls = str(v)
                 break
-        params = {
-            "class": cls,
-            "order": str(extend.get("order") or "最新"),
-            "type_id": str(tid),
-            "area": str(extend.get("area") or ""),
-            "year": str(extend.get("year") or ""),
-            "state": "",
-            "wd": "",
-            "page": str(pg),
-        }
+        params = self._list_params(tid=tid, cls=cls,
+                                   order=str(extend.get("order") or "最新"),
+                                   area=str(extend.get("area") or ""),
+                                   year=str(extend.get("year") or ""), pg=pg)
         j = self._get("list", params)
         lst = (j or {}).get("data") or []
         items = [self._vod_from_list(v) for v in lst]
@@ -315,35 +338,40 @@ class Spider(BaseSpider):
             first_url = eps[0].get("url") or ""
             if not first_url.startswith("http") and pid not in parsers:
                 continue
-            sources.append({"player_id": pid, "prio": int(s_.get("prio") or 999),
-                            "episodes": eps})
+            raw = s_.get("prio")
+            try:
+                prio = int(raw) if raw not in (None, "") else 999
+            except (TypeError, ValueError):
+                prio = 999
+            sources.append({"player_id": pid, "prio": prio, "episodes": eps})
 
         if not sources:
             return {"list": []}
 
-        # 按 prio 排序(小→大), 最多保留 4 个可切换源
+        # 按 prio 排序(小→大); 保留全部可用源作为路线, 自动跟随 APP 侧源增减
         sources.sort(key=lambda x: x["prio"])
-        sources = sources[:4]
 
+        # TVBox 约定: 播放源之间用 $$$ 分隔, 源内各集用 # 分隔, 每集为 "集名$地址@@源id"
+        # (若用 # 连接多个源, TVBox 会把整串当作单一源名, 并将所有源的全部集数合并到选集里)
+        # 路线显示为 APP 中文线路名(player_name), 选集地址仍带 @@英文pid 供播放时取用
+        names = self._player_names()
         play_from = []
         play_urls = []
         for s_ in sources:
             pid = s_["player_id"]
-            play_from.append(pid)
+            play_from.append(re.sub(r"[$#]", "", names.get(pid, pid)))
             eps_str = "#".join(
                 "%s$%s@@%s" % (e.get("name") or "第%02d集" % (i + 1), e.get("url"), pid)
                 for i, e in enumerate(s_["episodes"])
             )
             play_urls.append(eps_str)
-        vod["vod_play_from"] = "#".join(play_from)
-        vod["vod_play_url"] = "#".join(play_urls)
+        vod["vod_play_from"] = "$$$".join(play_from)
+        vod["vod_play_url"] = "$$$".join(play_urls)
         return {"list": [vod]}
 
     def searchContent(self, key, quick, pg="1"):
         pg = int(pg) if str(pg).isdigit() else 1
-        j = self._get("list", {"class": "", "order": "最新", "type_id": "",
-                               "area": "", "year": "", "state": "", "wd": str(key),
-                               "page": str(pg)})
+        j = self._get("list", self._list_params(wd=str(key), pg=pg))
         lst = (j or {}).get("data") or []
         items = [self._vod_from_list(v) for v in lst]
         pagecount = pg + 1 if items else pg
@@ -362,11 +390,20 @@ class Spider(BaseSpider):
         else:
             ep, player = s, str(flag)
 
+        # 路线显示为中文名时, 部分播放器可能把 flag(中文名)直接当源 id 传入, 反查回 pid
+        # (同名线路可能对应多个 pid, 优先取解析器映射中真实生效的那个)
+        parsers = self._parsers()
+        if player not in parsers:
+            for pid, name in self._player_names().items():
+                if name == player and pid in parsers:
+                    player = pid
+                    break
+
         # URL 型 ep(m3u8/mp4/ts)直接可播
         if ep.startswith("http") and re.search(r"\.(m3u8|mp4|ts|flv)(\?|$)", ep):
             return {"parse": 0, "playUrl": "", "url": ep, "header": "{}"}
 
-        tpl = self._parsers().get(player)
+        tpl = parsers.get(player)
         if not tpl:
             return {"parse": 1, "playUrl": "", "url": ""}
 
@@ -381,6 +418,13 @@ class Spider(BaseSpider):
         play = (j or {}).get("url") or ""
         if not play:
             return {"parse": 1, "playUrl": "", "url": ""}
+
+        # keymp4: CENC 加密 mp4 + 解密密钥, 标准播放器无法直播
+        # 配置解密代理后改为返回代理地址(代理内部下载解密并流式输出明文 mp4)
+        if (j or {}).get("type") == "keymp4" and self._KEYMP4_PROXY:
+            key = (j or {}).get("key") or ""
+            if key:
+                play = "%s/decode?u=%s&k=%s" % (self._KEYMP4_PROXY, quote(play, safe=""), key)
 
         headers = self._parse_headers((j or {}).get("headers") or "")
         return {"parse": 0, "playUrl": "", "url": play, "header": json.dumps(headers)}
