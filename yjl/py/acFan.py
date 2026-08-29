@@ -25,6 +25,7 @@ class Spider(BaseSpider):
         self.session.verify = False
         self.cat_path = {
             "guochan": "GC/2075051039321464834",
+            "Ai漫剧": "AI/2072655204107608066",
             "rifan": "3/2072212947517390849",
             "pao": "ITEM_LI9_TWI_N6Y/2072654840359600130",
             "motion": "MOTION_ANIME/2072654931050029058",
@@ -37,6 +38,7 @@ class Spider(BaseSpider):
         }
         self.class_list = [
             {"type_name": "国产动漫", "type_id": "guochan"},
+            {"type_name": "Ai漫剧", "type_id": "Ai漫剧"},
             {"type_name": "里番", "type_id": "rifan"},
             {"type_name": "泡面番", "type_id": "pao"},
             {"type_name": "Motion Anime", "type_id": "motion"},

@@ -71,8 +71,9 @@ class Spider(BaseSpider):
     # xm3u8 系特殊三步源(数字型 ep 需 tokenUrl 加密流程), 普通解析器不适用, 过滤
     _XM3U8 = {"xm3u8", "xiaocao", "hema"}
 
-    # 分类排序偏好(仅顺序, 分类数据仍来自 /types): "12"(AI短剧)紧跟 "5"(短剧)之后
-    _CLASS_ORDER = [("12", "5")]
+    # 分类排序偏好(仅顺序, 分类数据仍来自 /types):
+    # 直播(11)紧跟动漫(4)后, 其后短剧(5)、AI短剧(12)依次排列; 未提及的分类保持服务端顺序
+    _CLASS_ORDER = [("11", "4"), ("5", "11"), ("12", "5")]
 
     # 单行子分类上限: 单个"类型"筛选超过该数量即拆分为多个筛选组(每组独立一行), 避免一行过长
     _FILTER_SPLIT = 8
@@ -201,6 +202,14 @@ class Spider(BaseSpider):
             if tid is not None and name:
                 arr.append({"type_id": str(tid), "type_name": str(name),
                             "type_extend": m.get("type_extend") or {}})
+        # APP 服务端可能下掉"短剧"分类入口但内容仍在(tid=5): 补回
+        # 插入动漫(4)之后, 最终位置由 _reorder 按 _CLASS_ORDER 统一调整
+        if not any(c["type_id"] == "5" for c in arr):
+            has_short = bool((self._get("list", self._list_params(tid="5")) or {}).get("data"))
+            if has_short:
+                short = {"type_id": "5", "type_name": "短剧", "type_extend": {}}
+                pos = next((i for i, c in enumerate(arr) if c["type_id"] == "4"), None)
+                arr.insert(pos + 1 if pos is not None else 0, short)
         self.class_cache = self._reorder(arr)
         return self.class_cache
 
@@ -294,16 +303,8 @@ class Spider(BaseSpider):
                                    area=str(extend.get("area") or ""),
                                    year=str(extend.get("year") or ""), pg=pg)
         j = self._get("list", params)
-        lst = (j or {}).get("data") or []
-        items = [self._vod_from_list(v) for v in lst]
-        pagecount = pg + 1 if items else pg
-        return {
-            "page": pg,
-            "pagecount": pagecount,
-            "limit": self.page_size,
-            "total": 99999,
-            "list": items,
-        }
+        items = [self._vod_from_list(v) for v in (j or {}).get("data") or []]
+        return self._page_result(pg, items)
 
     def detailContent(self, ids):
         vid = str(ids[0])
@@ -372,16 +373,8 @@ class Spider(BaseSpider):
     def searchContent(self, key, quick, pg="1"):
         pg = int(pg) if str(pg).isdigit() else 1
         j = self._get("list", self._list_params(wd=str(key), pg=pg))
-        lst = (j or {}).get("data") or []
-        items = [self._vod_from_list(v) for v in lst]
-        pagecount = pg + 1 if items else pg
-        return {
-            "page": pg,
-            "pagecount": pagecount,
-            "limit": self.page_size,
-            "total": 99999,
-            "list": items,
-        }
+        items = [self._vod_from_list(v) for v in (j or {}).get("data") or []]
+        return self._page_result(pg, items)
 
     def playerContent(self, flag, id, vipFlags):
         s = str(id)
@@ -433,6 +426,16 @@ class Spider(BaseSpider):
         return True
 
     # ========== 内部方法 ==========
+
+    def _page_result(self, pg, items):
+        """构造分页列表响应(接口每页固定 12 条, 有数据则 pagecount 递增表示可继续翻页)"""
+        return {
+            "page": pg,
+            "pagecount": pg + 1 if items else pg,
+            "limit": self.page_size,
+            "total": 99999,
+            "list": items,
+        }
 
     @staticmethod
     def _parse_headers(s):
