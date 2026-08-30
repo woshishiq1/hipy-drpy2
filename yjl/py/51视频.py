@@ -78,10 +78,27 @@ class Spider(BaseSpider):
             
             if not classes:
                 classes = [{'type_name': '最新', 'type_id': '/latest/'}, {'type_name': '热门', 'type_id': '/hot/'}]
+            else:
+                classes = self.reorder_class(classes)
             
             return {'class': classes, 'list': self.getlist(data('#index article, article'))}
         except Exception as e:
             return {'class': [], 'list': []}
+
+    def reorder_class(self, classes):
+        anchor = '每日大赛'
+        targets = ['AI短剧', 'PMV混剪']
+        tmp = {c['type_name']: c for c in classes}
+        ordered = []
+        for c in classes:
+            if c['type_name'] in targets:
+                continue
+            ordered.append(c)
+            if c['type_name'] == anchor:
+                for t in targets:
+                    if t in tmp:
+                        ordered.append(tmp[t])
+        return ordered if ordered else classes
 
     def homeVideoContent(self):
         try:

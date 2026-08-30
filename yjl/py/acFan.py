@@ -25,7 +25,7 @@ class Spider(BaseSpider):
         self.session.verify = False
         self.cat_path = {
             "guochan": "GC/2075051039321464834",
-            "Ai漫剧": "AI/2072655204107608066",
+            "Ai漫剧": "MANJU/2089978565981192194",
             "rifan": "3/2072212947517390849",
             "pao": "ITEM_LI9_TWI_N6Y/2072654840359600130",
             "motion": "MOTION_ANIME/2072654931050029058",

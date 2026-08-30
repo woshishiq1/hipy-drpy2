@@ -1004,12 +1004,6 @@
             "api": "./py/韩小圈.py"
         },
 		{
-            "key": "ww",
-            "name": "🐸哇哇影视",
-            "type": 3,
-            "api": "./py/哇哇APP.py"
-        },
-		{
             "key": "jgvy",
             "name": "🍊追光影视",
             "type": 3,
@@ -1085,12 +1079,6 @@
             "api": "./py/飞快TV🍀TG @hshsjk9.py"
         },
 		{
-            "key": "Auete影视",
-            "name": "🍊Auete影视",
-            "type": 3,
-            "api": "./py/Auete影视🍀TG @hshsjk9.py"
-        },
-		{
             "key": "大马猴影视",
             "name": "🐒大马猴影视",
             "type": 3,
@@ -1113,12 +1101,6 @@
             "name": "🐳泡泡影院1",
             "type": 3,
             "api": "./py/泡泡影院🍀TG @hshsjk9.py"
-        },
-		{
-            "key": "宅男影视",
-            "name": "🍊宅男影视",
-            "type": 3,
-            "api": "./py/宅男影视🍀TG @hshsjk9.py"
         },
 		{
             "key": "看剧AI",
@@ -1247,6 +1229,81 @@
             "name": "🔍搜剧AI",
             "type": 3,
             "api": "./py/搜剧AI🍀TG @hshsjk9.py"
+        },
+		{
+            "key": "66大片网",
+            "name": "💡66大片网",
+            "type": 3,
+            "api": "./py/66大片网🍀TG @hshsjk9.py"
+        },
+		{
+            "key": "楓林網",
+            "name": "🍁楓林網",
+            "type": 3,
+            "api": "./py/楓林網🍀TG @hshsjk9.py"
+        },
+		{
+            "key": "草莓影视",
+            "name": "🍓草莓影视",
+            "type": 3,
+            "api": "./py/草莓影视🍀TG @hshsjk9.py"
+        },
+		{
+            "key": "八戒影视1",
+            "name": "🐷八戒影视1",
+            "type": 3,
+            "api": "./py/八戒影视🍀TG @hshsjk9.py"
+        },
+		{
+            "key": "qlys",
+            "name": "🐲麒麟影视2",
+            "type": 3,
+            "api": "./py/麒麟影视.py"
+        },
+		{
+            "key": "开心影院",
+            "name": "💵开心影院",
+            "type": 3,
+            "api": "./js/开心影院.js",
+            "changeable": 0
+        },
+		{
+            "key": "西瓜影视2",
+            "name": "🍉西瓜影视2",
+            "type": 3,
+            "api": "./js/西瓜影视.js",
+            "changeable": 0
+        },
+		{
+            "key": "枫叶影院1",
+            "name": "🍁枫叶影院1",
+            "type": 3,
+            "api": "./js/枫叶影院.js",
+            "changeable": 0
+        },
+		{
+            "key": "dnyy",
+            "name": "💡多瑙影院",
+            "type": 3,
+            "api": "./py/多瑙影院.py"
+        },
+		{
+            "key": "yl",
+            "name": "⛱️永乐视频1",
+            "type": 3,
+            "api": "./py/永乐视频.py"
+        },
+		{
+            "key": "ayf",
+            "name": "💡爱壹帆影视",
+            "type": 3,
+            "api": "./py/爱壹帆.py"
+        },
+		{
+            "key": "nmvm",
+            "name": "👨‍🌾农民影视3",
+            "type": 3,
+            "api": "./py/农民影视.py"
         },
 		{
             "key": "爬虫影视",

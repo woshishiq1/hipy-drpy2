@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-block.frztdfnc.cc（51暗网镜像）TVBox 爬虫站源
+51暗网 TVBox 爬虫站源（自动获取可用域名）
 Typecho Mirages 主题 + DPlayer（data-config JSON）
 关键: 完整 Chrome UA 才返回完整页面（简短 UA 被服务器截断正文/VIP 视频不下发）
+站点会换域名（DNS 污染/封禁），加载源时自动从地址发布页抓取当前可用域名：
+51awn4.com -> JS 跳转壳 -> ehiynkuc.com(Base64编码) -> 站点列表 -> 探测可用 -> 缓存
 """
 import re
 import json
+import base64
 import urllib.request
 import urllib.parse
 import ssl
@@ -24,7 +27,14 @@ class Spider(BaseSpider):
         except Exception:
             pass
         self.name = "51awBlock"
-        self.host = "https://block.frztdfnc.cc"
+        self.host = "https://51aw.com"
+        # 地址发布页入口（会 301/JS 跳转到最新发布页），可追加新入口
+        self.entries = [
+            "https://51awn4.com/",
+            "https://awcg48.com/",
+            "https://51aw.com/",
+        ]
+        self._host_done = False
         # 图片解密代理（站点图片 AES-CBC 加密，TVBox 无法直接显示）
         # 公网域名（CF 代理到本机 7800）——TVBox 在外网也能用
         self.img_proxy = "https://py.fzcrym.link:1314/bk51_img?u="
@@ -78,7 +88,7 @@ class Spider(BaseSpider):
         pass
 
     def init(self, extend=""):
-        pass
+        self.resolve_host()
 
     def homeContent(self, filter):
         return {"class": self.categories, "filters": {}, "list": []}
@@ -226,20 +236,93 @@ class Spider(BaseSpider):
         return [200, "video/MP2T", "", ""]
 
     # ---------- 内部 ----------
-    def fetch(self, url):
+    def resolve_host(self):
+        # 自动获取当前可用播放站，结果缓存，只探测一次
+        # 顺序: 已知播放站(快) -> 地址发布页收集的候选(慢) -> 默认
+        if getattr(self, "_host_done", False):
+            return
+        self._host_done = True
+        for u in ["https://51aw.com/", "https://block.jfnarrqbo.cc/"]:
+            if self._check_host(u):
+                self.host = u.rstrip("/")
+                return
+        cands = []
+        for e in self.entries:
+            for u in self._harvest_candidates(e):
+                if u not in cands:
+                    cands.append(u)
+        for u in cands:
+            if self._check_host(u):
+                self.host = u.rstrip("/")
+                return
+
+    def _harvest_candidates(self, entry, depth=0):
+        # 从发布页提取候选站点域名，支持 JS 跳转壳和 Base64 编码页
+        out = []
+        if depth > 2:
+            return out
+        html = self.fetch(entry)
+        if not html:
+            return out
+        source = html
+        for b in re.findall(r"Base64\.decode\('([^']+)'\)", html):
+            try:
+                source += "\n" + base64.b64decode(b).decode("utf-8", "replace")
+            except Exception:
+                pass
+        for m in re.finditer(r'https?://([a-zA-Z0-9._-]+)', source):
+            dom = m.group(1).rstrip("/").split("/")[0].split("?")[0]
+            if self._is_playable_domain(dom):
+                u = "https://" + dom
+                if u not in out:
+                    out.append(u)
+        for m in re.finditer(r'([a-zA-Z0-9-]+\.cloudfront\.net)', source):
+            u = "https://" + m.group(1)
+            if u not in out:
+                out.append(u)
+        # JS 跳转壳: <a href="...">加载中</a>
+        jm = re.search(r'<a[^>]+href=["\'](https?://[^"\']+)["\'][^>]*>', html)
+        if jm and jm.group(1) not in entry:
+            for u in self._harvest_candidates(jm.group(1), depth + 1):
+                if u not in out:
+                    out.append(u)
+        return out
+
+    def _is_playable_domain(self, dom):
+        dom = dom.lower().rstrip("/").split("/")[0]
+        if not re.match(r'^[a-z0-9.-]+\.(com|cc|net|top|xyz|vip|cloudfront\.net)$', dom):
+            return False
+        skip = ("googletagmanager", "google-analytics", "googlesyndication",
+                "googleapis", "gstatic", "google", "cloudflare", "jsdelivr",
+                "bootcdn", "unpkg", "picsum", "51awn4", "ehiynkuc")
+        return not any(s in dom for s in skip)
+
+    def _check_host(self, u):
+        u = u.rstrip("/")
+        try:
+            h = self.fetch(u + "/category/jrrg/", hdr={"Referer": u + "/"}, timeout=8)
+        except Exception:
+            return False
+        return "post-card" in h
+
+    def fetch(self, url, hdr=None, timeout=15):
+        headers = self.header
+        if hdr:
+            headers = dict(self.header)
+            headers.update(hdr)
         try:
             import requests
-            r = requests.get(url, headers=self.header, timeout=15, verify=False)
+            r = requests.get(url, headers=headers, timeout=timeout, verify=False)
             if r.status_code == 200 and r.text:
                 return r.text
         except Exception:
             pass
         try:
-            req = urllib.request.Request(url, headers=self.header)
+            req = urllib.request.Request(url, headers=headers)
             try:
-                resp = urllib.request.urlopen(req, context=self.ctx, timeout=15)
+                resp = urllib.request.urlopen(req, context=self.ctx, timeout=timeout)
             except TypeError:
-                resp = urllib.request.urlopen(req, timeout=15)
+                resp = urllib.request.urlopen(req, timeout=timeout)
             return resp.read().decode("utf-8", errors="replace")
         except Exception:
             return ""

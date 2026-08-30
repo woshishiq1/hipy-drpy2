@@ -1,47 +1,91 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 🌈 Love 
-import json
-import random
+"""
+51吃瓜网 TVBox 爬虫 - 动态配置版
+
+实现规则：
+1. 分类动态获取: class 列表从站点页面解析，结构 [{type_id, type_name, type_extend}]
+   type_extend 保留站点扩展字段（站点有筛选下拉时自动解析，无则为空，不硬编码）
+2. 筛选动态生成: filters 基于每个分类的 type_extend 动态构建
+   (class/area/year/order)，站点扩展字段变化时自动跟随
+3. 配置缓存: 新进程强制拉取最新配置；同进程多次调用走内存缓存不重复请求；
+   API/页面拉取失败降级 spider_cache.json 兜底，再失败用内置默认
+4. 分类顺序: _CLASS_ORDER 偏好表控制，如 ("cbdj","吃瓜热门") 表示 cbdj 紧跟"吃瓜热门"，
+   只调顺序不改数据，未提及分类保持原顺序，新分类自动排在后面
+5. 子分类拆行: type_extend 单个"类型"筛选子分类超 8 个拆成 class + class_more1 + ...，
+   每组在 TVBox 独立一行；categoryContent 里 class_moreN 共享 class 字段，取第一个非空
+6. 解析器/播放源动态获取: 详情页 dplayer data-config 实时解析，不硬编码播放源 URL
+7. TVBox 协议: homeContent 返回 {class, filters, list};
+   categoryContent 接收 (tid, pg, filter, extend) 返回 {page, pagecount, list}
+8. 父分类聚合: 顶级导航下拉成为主分类，其子分类转为"类型"筛选；不选筛选时并发
+   聚合全部子分类第一页(去重限100)，选中某子分类时直接请求该子分类页(支持翻页)
+9. 配置排除: _CLASS_EXCLUDE 按名称从主分类移除父分类，如"官方活动"
+"""
 import re
-import sys
-import threading
+import json
+import os
 import time
-from base64 import b64decode, b64encode
-from urllib.parse import urlparse, urljoin
+import ssl
+import concurrent.futures
+import urllib.request
+import urllib.parse
 
-import requests
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import unpad
-from pyquery import PyQuery as pq
-sys.path.append('..')
-from base.spider import Spider
+try:
+    from base.spider import Spider as BaseSpider
+except Exception:
+    BaseSpider = object
+
+# 进程级内存缓存: {cache_key: cfg}，同进程多次调用不重复拉配置
+_MEM_CACHE = {}
 
 
-class Spider(Spider):
+class Spider(BaseSpider):
+    # 分类顺序偏好表: ("A","B") 表示分类 A 紧跟分类 B 之后，留空保持站点顺序。
+    # A 若是某父分类的子分类，则自动提升为主分类（并从原父分类移除）。
+    # 默认: AI成人短剧(cbdj) 提升为主分类，排在"吃瓜热门"之后
+    _CLASS_ORDER = [("cbdj", "吃瓜热门")]
+    # 从主分类中排除的父分类（按名称匹配），如官方活动
+    _CLASS_EXCLUDE = ["官方活动"]
+    _CACHE_FILE = "spider_cache.json"
 
-    def init(self, extend=""):
-        try:self.proxies = json.loads(extend)
-        except:self.proxies = {}
+    def __init__(self):
+        try:
+            super().__init__()
+        except Exception:
+            pass
+        self.name = "51吃瓜"
+        # 站点入口候选（自动探测可用域名，对应 /config 的站点入口）
+        self._host_candidates = [
+            "https://artist.cnmhljju.cc/",
+            "https://artist.vgwtswi.xyz/",
+            "https://ability.vgwtswi.xyz/",
+            "https://am.vgwtswi.xyz/",
+        ]
+        self.host = self._host_candidates[0].rstrip("/")
+        # 图片解密代理（站点图片 AES-CBC 加密，TVBox 无法直接显示）
+        self.img_proxy = "https://py.fzcrym.link:1314/bk51_img?u="
+        self.ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-            'Connection': 'keep-alive',
-            'Cache-Control': 'no-cache',
+            "User-Agent": self.ua,
+            "Referer": self.host + "/",
+            "Accept-Language": "zh-CN,zh;q=0.9",
         }
-        # Use working dynamic URLs directly
-        self.host = self.get_working_host()
-        self.headers.update({'Origin': self.host, 'Referer': f"{self.host}/"})
-        self.log(f"使用站点: {self.host}")
-        print(f"使用站点: {self.host}")
-        pass
+        try:
+            self.ctx = ssl.create_default_context()
+            self.ctx.check_hostname = False
+            self.ctx.verify_mode = ssl.CERT_NONE
+        except Exception:
+            self.ctx = None
+        self._cfg = None
+        # 父分类聚合结果缓存: {key: (timestamp, videos)}，TTL 5 分钟
+        self._agg_cache = {}
 
+    # ---------- 协议基础 ----------
     def getName(self):
-        return "🌈 51吸瓜"
+        return self.name
 
     def isVideoFormat(self, url):
-        # Treat direct media formats as playable without parsing
-        return any(ext in (url or '') for ext in ['.m3u8', '.mp4', '.ts'])
+        return any(ext in (url or "") for ext in [".m3u8", ".mp4", ".ts"])
 
     def manualVideoCheck(self):
         return False
@@ -49,431 +93,602 @@ class Spider(Spider):
     def destroy(self):
         pass
 
+    def init(self, extend=""):
+        self.ensure_config()
+
+    # ---------- 配置加载（规则3） ----------
+    def ensure_config(self):
+        if self._cfg:
+            return self._cfg
+        key = self._cache_key()
+        if key in _MEM_CACHE:
+            self._cfg = _MEM_CACHE[key]
+        else:
+            self._cfg = self._refresh_config()
+            _MEM_CACHE[key] = self._cfg
+        if self._cfg:
+            self.host = self._cfg["host"]
+            self.headers["Referer"] = self.host + "/"
+        return self._cfg
+
+    def _cache_key(self):
+        return self._host_candidates[0].split("//")[1].split("/")[0]
+
+    def _refresh_config(self):
+        cfg = self._fetch_config()          # 新进程强制拉最新
+        if not cfg:
+            cfg = self._load_cache_file()   # 降级: 本地 spider_cache.json
+        if not cfg:
+            cfg = self._default_config()    # 兜底: 内置默认
+        if cfg:
+            self._save_cache_file(cfg)
+        return cfg
+
+    def _fetch_config(self):
+        host = self._resolve_host()
+        if not host:
+            return None
+        html = self.fetch(host + "/", timeout=12)
+        if not html:
+            return None
+        direct, parents = self._parse_nav(html)
+        classes, parents = self._build_classes(direct, parents)
+        if not classes:
+            return None
+        # 筛选样本检测: 抓首个分类页，若无筛选控件则全站跳过，避免逐个请求。
+        # 只覆盖直接分类，父分类的"类型"筛选（子分类）由 _build_classes 设定，不受影响
+        parent_ids = set(parents.keys())
+        sample_html = ""
+        if classes:
+            try:
+                sample_html = self.fetch("%s/category/%s/" % (host, classes[0]["type_id"]), timeout=8)
+            except Exception:
+                sample_html = ""
+        if self._parse_selects(sample_html or ""):
+            for c in classes:
+                if c["type_id"] in parent_ids:
+                    continue
+                c["type_extend"] = self._parse_selects(
+                    self.fetch("%s/category/%s/" % (host, c["type_id"]), timeout=8) or "")
+        else:
+            for c in classes:
+                if c["type_id"] not in parent_ids:
+                    c["type_extend"] = {}
+        classes = self._apply_class_order(classes)
+        return {"host": host, "classes": classes, "parents": parents, "fetched_at": time.time()}
+
+    def _parse_nav(self, html):
+        # 解析站点两级导航:
+        #   直接分类: <li class="menu-item"><a href="/category/x/">今日吃瓜</a></li>
+        #   父分类:   <li class="nav-item dropdown"><button>吃瓜热门</button>
+        #               <ul class="dropdown-menu"><li>.../category/x/...</li></ul></li>
+        direct = []
+        parents = {}
+        nav = re.search(r'<ul id="menu-menu-1"[^>]*>([\s\S]*?)</ul>\s*</nav>', html)
+        seg = nav.group(1) if nav else html
+        for m in re.finditer(r'<li class="menu-item">\s*<a[^>]*href="(/category/([^"/]+)/)"[^>]*>\s*([^<]{1,40}?)\s*</a>', seg):
+            slug, name = m.group(2), self._clean(m.group(3))
+            if slug and name and not any(x == slug for x, _ in direct):
+                direct.append((slug, name))
+        for dd in re.finditer(r'<li class="nav-item dropdown">([\s\S]*?)</ul>\s*</li>', seg):
+            block = dd.group(1)
+            nm = re.search(r'<div>\s*([^<]+?)\s*</div>', block)
+            name = self._clean(nm.group(1)) if nm else ""
+            # 过滤: 无子分类的导航(官方信息/精品应用)、重复渲染的"首页"下拉
+            if not name or name in ("首页",) or name in parents:
+                continue
+            subs = []
+            for a in re.finditer(r'href="/category/([^"/]+)/"[^>]*>\s*([^<]{1,40}?)\s*</a>', block):
+                subs.append((a.group(1), self._clean(a.group(2))))
+            if subs:
+                parents[name] = subs
+        return direct, parents
+
+    def _build_classes(self, direct, parents):
+        # 生成主分类列表（顶级导航）:
+        #   直接分类 + 父分类(子分类转为"类型"筛选) + _CLASS_ORDER 提升的子分类；
+        #   父分类无子分类或命中 _CLASS_EXCLUDE 则跳过
+        promoted = set()
+        for a, b in self._CLASS_ORDER:
+            for name, subs in parents.items():
+                if a in [s[0] for s in subs] and name != b:
+                    promoted.add(a)
+        classes = []
+        for slug, name in direct:
+            classes.append({"type_id": slug, "type_name": name, "type_extend": {}})
+        new_parents = {}
+        for name, subs in parents.items():
+            if name in self._CLASS_EXCLUDE:
+                continue
+            keep = [(s, n) for s, n in subs if s not in promoted]
+            if not keep:
+                continue
+            new_parents[name] = [s for s, _ in keep]
+            classes.append({"type_id": name, "type_name": name,
+                            "type_extend": {"class": [{"n": n, "v": s} for s, n in keep]}})
+        for a, b in self._CLASS_ORDER:
+            for name, subs in parents.items():
+                for s, sn in subs:
+                    if s == a and not any(c["type_id"] == a for c in classes):
+                        classes.append({"type_id": a, "type_name": sn, "type_extend": {}})
+        return classes, new_parents
+
+    def _parse_selects(self, html):
+        # 通用下拉筛选解析: <select name=...><option value=...>文本</option></select>
+        ext = {}
+        key_map = {"type": "class", "class": "class", "area": "area",
+                   "year": "year", "order": "order", "sort": "order"}
+        for sm in re.finditer(r'<select[^>]*name=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</select>', html):
+            raw_key = sm.group(1).lower()
+            key = key_map.get(raw_key)
+            if not key:
+                continue
+            values = []
+            for om in re.finditer(r'<option[^>]*value=["\']?([^"\'>]*)["\']?[^>]*>([\s\S]*?)</option>', sm.group(2)):
+                v = om.group(1).strip()
+                n = self._clean(om.group(2))
+                if not n:
+                    continue
+                values.append({"n": n, "v": v})
+            if values:
+                ext[key] = values
+        return ext
+
+    def _apply_class_order(self, classes):
+        # 规则4: 偏好表控制顺序，只调顺序不改数据
+        if not self._CLASS_ORDER:
+            return classes
+        by_id = {c["type_id"]: c for c in classes}
+        after = {}   # B -> A: A 紧跟 B
+        a_set = set()
+        for a, b in self._CLASS_ORDER:
+            if a in by_id and b in by_id and a != b:
+                after[b] = a
+                a_set.add(a)
+        result = []
+        placed = set()
+
+        def place_chain(cid):
+            if cid in placed or cid not in by_id:
+                return
+            placed.add(cid)
+            result.append(by_id[cid])
+            while cid in after and after[cid] not in placed:
+                cid = after[cid]
+                placed.add(cid)
+                result.append(by_id[cid])
+
+        for c in classes:
+            cid = c["type_id"]
+            if cid in placed or cid in a_set:
+                continue  # a_set 成员位置由偏好关系决定
+            place_chain(cid)
+        for c in classes:
+            if c["type_id"] not in placed:
+                place_chain(c["type_id"])
+        return result
+
+    # ---------- 首页 ----------
     def homeContent(self, filter):
-        try:
-            response = requests.get(self.host, headers=self.headers, proxies=self.proxies, timeout=15)
-            if response.status_code != 200:
-                return {'class': [], 'list': []}
-                
-            data = self.getpq(response.text)
-            result = {}
-            classes = []
-            
-            # Try to get categories from different possible locations
-            category_selectors = [
-                '.category-list ul li',
-                '.nav-menu li',
-                '.menu li',
-                'nav ul li'
-            ]
-            
-            for selector in category_selectors:
-                for k in data(selector).items():
-                    link = k('a')
-                    href = (link.attr('href') or '').strip()
-                    name = (link.text() or '').strip()
-                    # Skip placeholder or invalid entries
-                    if not href or href == '#' or not name:
-                        continue
-                    classes.append({
-                        'type_name': name,
-                        'type_id': href
-                    })
-                if classes:
-                    break
-            
-            # If no categories found, create some default ones
-            if not classes:
-                classes = [
-                    {'type_name': '最新', 'type_id': '/latest/'},
-                    {'type_name': '热门', 'type_id': '/hot/'}
-                ]
-            
-            result['class'] = classes
-            result['list'] = self.getlist(data('#index article a'))
-            return result
-            
-        except Exception as e:
-            print(f"homeContent error: {e}")
-            return {'class': [], 'list': []}
+        cfg = self.ensure_config()
+        classes = cfg["classes"]
+        filters = {}
+        for c in classes:
+            filters[c["type_id"]] = self._build_filters(c.get("type_extend") or {})
+        html = self.fetch(self.host + "/", timeout=12)
+        lst = self._parse_list(html)
+        return {"class": classes, "filters": filters, "list": lst}
 
     def homeVideoContent(self):
-        try:
-            response = requests.get(self.host, headers=self.headers, proxies=self.proxies, timeout=15)
-            if response.status_code != 200:
-                return {'list': []}
-            data = self.getpq(response.text)
-            return {'list': self.getlist(data('#index article a, #archive article a'))}
-        except Exception as e:
-            print(f"homeVideoContent error: {e}")
-            return {'list': []}
+        self.ensure_config()
+        html = self.fetch(self.host + "/", timeout=12)
+        return {"list": self._parse_list(html)}
 
+    # ---------- 筛选构建（规则2/5） ----------
+    def _build_filters(self, ext):
+        groups = []
+        cls = ext.get("class") or []
+        if cls:
+            # 子分类超 8 拆行: class + class_more1 + ...
+            for g in range((len(cls) + 7) // 8):
+                key = "class" if g == 0 else "class_more%d" % g
+                seg = cls[g * 8:(g + 1) * 8]
+                groups.append({"key": key, "name": "类型",
+                               "value": [{"n": "全部", "v": ""}] + seg})
+        if ext.get("area"):
+            groups.append({"key": "area", "name": "地区",
+                           "value": [{"n": "全部", "v": ""}] + ext["area"]})
+        if ext.get("year"):
+            groups.append({"key": "year", "name": "年份",
+                           "value": [{"n": "全部", "v": ""}] + ext["year"]})
+        if ext.get("order"):
+            groups.append({"key": "order", "name": "排序", "value": ext["order"]})
+        return groups
+
+    # ---------- 分类页 ----------
     def categoryContent(self, tid, pg, filter, extend):
-        try:
-            if '@folder' in tid:
-                id = tid.replace('@folder', '')
-                videos = self.getfod(id)
-            else:
-                # 处理分页逻辑
-                page_num = int(pg) if pg and pg.isdigit() else 1
-                
-                # 构建基础URL
-                if tid.startswith('/'):
-                    base_url = f"{self.host}{tid}"
-                else:
-                    base_url = f"{self.host}/{tid}"
-                
-                # 移除可能存在的末尾斜杠，以便统一添加分页
-                base_url = base_url.rstrip('/')
-                
-                # 根据页码构建URL - 使用你提供的分页格式: /category/name/页码/
-                if page_num > 1:
-                    url = f"{base_url}/{page_num}/"
-                else:
-                    # 第一页使用基础URL
-                    url = f"{base_url}/"
-                    
-                self.log(f"分类请求URL: {url}")
-                print(f"分类请求URL: {url}")
-
-                response = requests.get(url, headers=self.headers, proxies=self.proxies, timeout=15)
-                if response.status_code != 200:
-                    return {'list': [], 'page': pg, 'pagecount': 1, 'limit': 90, 'total': 0}
-                    
-                data = self.getpq(response.text)
-                videos = self.getlist(data('#archive article a, #index article a'), tid)
-                
-                # 尝试获取总页数
-                pagecount = 1
+        cfg = self.ensure_config()
+        pg = int(pg) if str(pg).isdigit() else 1
+        # 兼容客户端传参: 多数客户端把筛选放 filter(dict/JSON字符串),
+        # 影视仓/小苹果等把筛选放 extend 而 filter 只传 True/False
+        if isinstance(extend, dict) and extend:
+            f = filter
+            if isinstance(f, str):
                 try:
-                    # 查找分页元素 - 尝试多种可能的选择器
-                    pagination_selectors = ['.pagination', '.page-nav', '.pager', '.nav-links', '.pages']
-                    for selector in pagination_selectors:
-                        pagination = data(selector)
-                        if pagination:
-                            page_links = pagination.find('a')
-                            page_numbers = []
-                            for link in page_links.items():
-                                text = link.text().strip()
-                                if text.isdigit():
-                                    page_numbers.append(int(text))
-                            if page_numbers:
-                                pagecount = max(page_numbers)
-                                break
-                    
-                    # 如果没有找到分页元素，尝试查找下一页按钮判断页数
-                    if pagecount == 1:
-                        next_buttons = data('a:contains("下一页"), a:contains("Next")')
-                        if next_buttons:
-                            pagecount = 999  # 有下一页按钮但无法确定具体页数，设一个较大值
-                except Exception as e:
-                    self.log(f"获取总页数失败: {e}")
-                    pagecount = 999  # 如果无法获取，设置一个较大的值
-                
-            result = {}
-            result['list'] = videos
-            result['page'] = pg
-            result['pagecount'] = pagecount
-            result['limit'] = 90
-            result['total'] = 999999
-            return result
-            
-        except Exception as e:
-            print(f"categoryContent error: {e}")
-            return {'list': [], 'page': pg, 'pagecount': 1, 'limit': 90, 'total': 0}
+                    f = json.loads(f)
+                except Exception:
+                    f = {}
+            if not isinstance(f, dict):
+                f = {}
+            filter = {**extend, **f}
+        # 父分类（顶级导航下拉）: 聚合其全部子分类第一页内容
+        parents = cfg.get("parents") or {}
+        if tid in parents:
+            return self._category_aggregate(parents[tid], pg, filter)
+        if pg <= 1:
+            url = "%s/category/%s/" % (self.host, tid)
+        else:
+            url = "%s/category/%s/%d/" % (self.host, tid, pg)
+        qs = self._merge_filter(filter)
+        if qs:
+            url += "?" + qs
+        html = self.fetch(url, timeout=12)
+        videos = self._parse_list(html)
+        has_next = len(videos) > 0 and ("%s/%d/" % (tid, pg + 1)) in html
+        return {
+            "list": videos,
+            "page": pg,
+            "pagecount": pg + 1 if has_next else pg,
+            "limit": max(1, len(videos)),
+            "total": 999999 if has_next else pg * max(1, len(videos)),
+        }
 
-    def detailContent(self, ids):
-        try:
-            url = f"{self.host}{ids[0]}" if not ids[0].startswith('http') else ids[0]
-            response = requests.get(url, headers=self.headers, proxies=self.proxies, timeout=15)
-            
-            if response.status_code != 200:
-                return {'list': [{'vod_play_from': '51吸瓜', 'vod_play_url': f'页面加载失败${url}'}]}
-                
-            data = self.getpq(response.text)
-            vod = {'vod_play_from': '51吸瓜'}
-            
-            # Get content/description
-            try:
-                clist = []
-                if data('.tags .keywords a'):
-                    for k in data('.tags .keywords a').items():
-                        title = k.text()
-                        href = k.attr('href')
-                        if title and href:
-                            clist.append('[a=cr:' + json.dumps({'id': href, 'name': title}) + '/]' + title + '[/a]')
-                vod['vod_content'] = ' '.join(clist) if clist else data('.post-title').text()
-            except:
-                vod['vod_content'] = data('.post-title').text() or '51吸瓜视频'
-            
-            # Get video URLs (build episode list when multiple players exist)
-            try:
-                plist = []
-                used_names = set()
-                if data('.dplayer'):
-                    for c, k in enumerate(data('.dplayer').items(), start=1):
-                        config_attr = k.attr('data-config')
-                        if config_attr:
-                            try:
-                                config = json.loads(config_attr)
-                                video_url = config.get('video', {}).get('url', '')
-                                # Determine a readable episode name from nearby headings if present
-                                ep_name = ''
-                                try:
-                                    parent = k.parents().eq(0)
-                                    # search up to a few ancestors for a heading text
-                                    for _ in range(3):
-                                        if not parent: break
-                                        heading = parent.find('h2, h3, h4').eq(0).text() or ''
-                                        heading = heading.strip()
-                                        if heading:
-                                            ep_name = heading
-                                            break
-                                        parent = parent.parents().eq(0)
-                                except Exception:
-                                    ep_name = ''
-                                base_name = ep_name if ep_name else f"视频{c}"
-                                name = base_name
-                                count = 2
-                                # Ensure the name is unique
-                                while name in used_names:
-                                    name = f"{base_name} {count}"
-                                    count += 1
-                                used_names.add(name)
-                                if video_url:
-                                    self.log(f"解析到视频: {name} -> {video_url}")
-                                    print(f"解析到视频: {name} -> {video_url}")
-                                    plist.append(f"{name}${video_url}")
-                            except:
-                                continue
-                
-                if plist:
-                    self.log(f"拼装播放列表，共{len(plist)}个")
-                    print(f"拼装播放列表，共{len(plist)}个")
-                    vod['vod_play_url'] = '#'.join(plist)
-                else:
-                    vod['vod_play_url'] = f"未找到视频源${url}"
-                    
-            except Exception as e:
-                vod['vod_play_url'] = f"视频解析失败${url}"
-                
-            return {'list': [vod]}
-            
-        except Exception as e:
-            print(f"detailContent error: {e}")
-            return {'list': [{'vod_play_from': '51吸瓜', 'vod_play_url': f'详情页加载失败${ids[0] if ids else ""}'}]}
-
-    def searchContent(self, key, quick, pg="1"):
-        try:
-            # 处理搜索分页
-            page_num = int(pg) if pg and pg.isdigit() else 1
-            
-            # 使用统一的分页格式
-            if page_num > 1:
-                url = f"{self.host}/search/{key}/{page_num}/"
+    def _category_aggregate(self, slugs, pg, filter):
+        # 父分类聚合: 筛选指定子分类(class)时直接请求该子分类页(支持翻页)；
+        # 否则并发抓取全部子分类第一页后合并去重（同进程缓存 5 分钟，避免 TVBox 超时）
+        pg = int(pg)
+        sub = self._class_filter_value(filter)
+        if sub and sub in slugs:
+            if pg <= 1:
+                url = "%s/category/%s/" % (self.host, sub)
             else:
-                url = f"{self.host}/search/{key}/"
-                
-            self.log(f"搜索请求URL: {url}")
-            print(f"搜索请求URL: {url}")
-            
-            response = requests.get(url, headers=self.headers, proxies=self.proxies, timeout=15)
-            
-            if response.status_code != 200:
-                return {'list': [], 'page': pg}
-                
-            data = self.getpq(response.text)
-            videos = self.getlist(data('#archive article a, #index article a'))
-            
-            # 尝试获取搜索结果的页数
-            pagecount = 1
-            try:
-                pagination_selectors = ['.pagination', '.page-nav', '.pager', '.nav-links', '.pages']
-                for selector in pagination_selectors:
-                    pagination = data(selector)
-                    if pagination:
-                        page_links = pagination.find('a')
-                        page_numbers = []
-                        for link in page_links.items():
-                            text = link.text().strip()
-                            if text.isdigit():
-                                page_numbers.append(int(text))
-                        if page_numbers:
-                            pagecount = max(page_numbers)
-                            break
-                
-                # 如果没有找到分页元素，尝试查找下一页按钮判断页数
-                if pagecount == 1:
-                    next_buttons = data('a:contains("下一页"), a:contains("Next")')
-                    if next_buttons:
-                        pagecount = 999
-            except:
-                pagecount = 999
-                
-            return {'list': videos, 'page': pg, 'pagecount': pagecount}
-            
-        except Exception as e:
-            print(f"searchContent error: {e}")
-            return {'list': [], 'page': pg}
+                url = "%s/category/%s/%d/" % (self.host, sub, pg)
+            qs = self._merge_filter(filter)
+            if qs:
+                url += "?" + qs
+            html = self.fetch(url, timeout=12)
+            videos = self._parse_list(html)
+            has_next = len(videos) > 0 and ("%s/%d/" % (sub, pg + 1)) in html
+            return {"list": videos, "page": pg,
+                    "pagecount": pg + 1 if has_next else pg,
+                    "limit": max(1, len(videos)),
+                    "total": 999999 if has_next else pg * max(1, len(videos))}
+        if pg > 1:
+            return {"list": [], "page": pg, "pagecount": 1, "limit": 0, "total": 0}
+        key = "|".join(slugs)
+        now = time.time()
+        hit = self._agg_cache.get(key)
+        if not hit or now - hit[0] > 300:
+            def grab(slug):
+                return self._parse_list(self.fetch("%s/category/%s/" % (self.host, slug), timeout=10))
+            videos = []
+            seen = set()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(slugs))) as ex:
+                for vs in ex.map(grab, slugs):
+                    for v in vs:
+                        if v["vod_id"] not in seen:
+                            seen.add(v["vod_id"])
+                            videos.append(v)
+            self._agg_cache[key] = (now, videos)
+        else:
+            videos = hit[1]
+        return {"list": videos[:100], "page": 1, "pagecount": 1,
+                "limit": len(videos), "total": len(videos)}
 
+    def _normalize_filter(self, filter):
+        # 兼容客户端传参形态: dict / JSON字符串 / True/False / None
+        if not filter:
+            return {}
+        if isinstance(filter, str):
+            try:
+                return json.loads(filter)
+            except Exception:
+                return {}
+        return filter if isinstance(filter, dict) else {}
+
+    def _merge_filter(self, filter):
+        # 规则5: class_moreN 共享后端 class 字段，取第一个非空值
+        f = self._normalize_filter(filter)
+        if not f:
+            return ""
+        cls = self._class_filter_value(f)
+        parts = []
+        if cls:
+            parts.append(("class", cls))
+        for k in ("area", "year", "order"):
+            if f.get(k):
+                parts.append((k, f[k]))
+        return urllib.parse.urlencode(parts)
+
+    def _class_filter_value(self, filter):
+        # 提取"类型"筛选值: class 优先，class_moreN 取第一个非空
+        f = self._normalize_filter(filter)
+        if not f:
+            return ""
+        v = f.get("class") or ""
+        i = 1
+        while not v and f.get("class_more%d" % i):
+            v = f["class_more%d" % i]
+            i += 1
+        return v
+
+    # ---------- 详情页（规则6） ----------
+    def detailContent(self, ids):
+        self.ensure_config()
+        vid = ids[0] if isinstance(ids, list) else ids
+        vid = str(vid).strip("/").split("/")[-1]
+        url = "%s/archives/%s/" % (self.host, vid)
+        html = self.fetch(url, timeout=12)
+        if not html:
+            return {"list": []}
+
+        title = ""
+        tm = re.search(r'<h1 class="post-title[^"]*"[^>]*>([\s\S]*?)</h1>', html)
+        if tm:
+            title = self._clean(tm.group(1))
+        if not title:
+            tm = re.search(r'<title>([^<]+?)\s*[-|]\s*51吃瓜', html)
+            if tm:
+                title = self._clean(tm.group(1))
+        if not title:
+            tm = re.search(r'<title>([^<]+)</title>', html)
+            if tm:
+                title = self._clean(tm.group(1))
+
+        pic = ""
+        pm = re.search(r"loadBannerDirect\(['\"]([^'\"]+\.(?:jpe?g|png|webp)[^'\"]*)['\"]", html)
+        if not pm:
+            pm = re.search(r'itemprop="image"\s+content="([^"]+)"', html)
+        if not pm:
+            pm = re.search(r"loadImage\(['\"](https?[^'\"]+\.(?:jpe?g|png|webp))['\"]", html)
+        if pm and "logo" not in pm.group(1) and "default" not in pm.group(1):
+            pic = self._fix_url(pm.group(1).replace("\\/", "/"))
+
+        intro = ""
+        im = re.search(r'name="description"\s+content="([^"]+)"', html)
+        if im:
+            intro = self._clean(im.group(1))[:200]
+
+        episodes = []
+        seen = set()
+        for m in re.finditer(r'<div class="dplayer"([^>]+)>', html):
+            attrs = m.group(1)
+            cm = re.search(r"data-config='(\{.*?\})'", attrs, re.S)
+            if not cm:
+                continue
+            try:
+                dcfg = json.loads(cm.group(1))
+                media = ((dcfg.get("video") or {}).get("url") or "").replace("\\/", "/")
+            except Exception:
+                media = ""
+            if not media or media in seen:
+                continue
+            seen.add(media)
+            name = self._dplayer_name(html, m.start(), len(episodes) + 1)
+            episodes.append("%s$%s" % (name, media))
+        if not episodes:
+            um = re.search(r'(https?://[^"\'\s]+\.m3u8[^"\'\s]*)', html)
+            if um:
+                episodes.append("正片$" + um.group(1))
+        if not episodes:
+            return {"list": []}
+
+        return {"list": [{
+            "vod_id": vid,
+            "vod_name": title,
+            "vod_pic": pic,
+            "vod_content": intro,
+            "vod_play_from": self.name,
+            "vod_play_url": "#".join(episodes),
+        }]}
+
+    def _dplayer_name(self, html, pos, default_no):
+        head = html[:pos]
+        hm = re.findall(r'<h[23][^>]*>([\s\S]*?)</h[23]>', head)
+        if hm:
+            n = self._clean(hm[-1])
+            if n:
+                return n
+        return "第%d集" % default_no
+
+    # ---------- 搜索 ----------
+    def searchContent(self, key, quick, pg="1"):
+        self.ensure_config()
+        pg = int(pg) if str(pg).isdigit() else 1
+        wd = urllib.parse.quote(str(key))
+        if pg <= 1:
+            url = "%s/search/%s/" % (self.host, wd)
+        else:
+            url = "%s/search/%s/%d/" % (self.host, wd, pg)
+        html = self.fetch(url, timeout=12)
+        videos = self._parse_list(html)
+        has_next = len(videos) >= 25
+        return {
+            "list": videos,
+            "page": pg,
+            "pagecount": pg + 1 if has_next else pg,
+            "limit": 20,
+            "total": 999999 if has_next else pg * max(1, len(videos)),
+        }
+
+    # ---------- 播放 ----------
     def playerContent(self, flag, id, vipFlags):
-        url = id
-        p = 1
+        self.ensure_config()
+        url = str(id)
         if self.isVideoFormat(url):
-            # m3u8/mp4 direct play; when using proxy setting, wrap to proxy for m3u8
-            if '.m3u8' in url:
-                url = self.proxy(url)
-            p = 0
-        self.log(f"播放请求: parse={p}, url={url}")
-        print(f"播放请求: parse={p}, url={url}")
-        return {'parse': p, 'url': url, 'header': self.headers}
+            return {
+                "parse": 0,
+                "playUrl": "",
+                "url": url,
+                "header": json.dumps({"User-Agent": self.ua, "Referer": self.host + "/"}),
+            }
+        return {"parse": 1, "url": url, "header": "{}"}
 
     def localProxy(self, param):
-        if param.get('type') == 'img':
-            res=requests.get(param['url'], headers=self.headers, proxies=self.proxies, timeout=10)
-            return [200,res.headers.get('Content-Type'),self.aesimg(res.content)]
-        elif param.get('type') == 'm3u8':return self.m3Proxy(param['url'])
-        else:return self.tsProxy(param['url'])
+        return [200, "video/MP2T", "", ""]
 
-    def proxy(self, data, type='m3u8'):
-        if data and len(self.proxies):return f"{self.getProxyUrl()}&url={self.e64(data)}&type={type}"
-        else:return data
+    # ---------- 域名探测（对应 /config） ----------
+    def _resolve_host(self):
+        for u in self._host_candidates:
+            if self._check_host(u):
+                return u.rstrip("/")
+        return None
 
-    def m3Proxy(self, url):
-        url=self.d64(url)
-        ydata = requests.get(url, headers=self.headers, proxies=self.proxies, allow_redirects=False)
-        data = ydata.content.decode('utf-8')
-        if ydata.headers.get('Location'):
-            url = ydata.headers['Location']
-            data = requests.get(url, headers=self.headers, proxies=self.proxies).content.decode('utf-8')
-        lines = data.strip().split('\n')
-        last_r = url[:url.rfind('/')]
-        parsed_url = urlparse(url)
-        durl = parsed_url.scheme + "://" + parsed_url.netloc
-        iskey=True
-        for index, string in enumerate(lines):
-            if iskey and 'URI' in string:
-                pattern = r'URI="([^"]*)"'
-                match = re.search(pattern, string)
-                if match:
-                    lines[index] = re.sub(pattern, f'URI="{self.proxy(match.group(1), "mkey")}"', string)
-                    iskey=False
-                    continue
-            if '#EXT' not in string:
-                if 'http' not in string:
-                    domain = last_r if string.count('/') < 2 else durl
-                    string = domain + ('' if string.startswith('/') else '/') + string
-                lines[index] = self.proxy(string, string.split('.')[-1].split('?')[0])
-        data = '\n'.join(lines)
-        return [200, "application/vnd.apple.mpegur", data]
-
-    def tsProxy(self, url):
-        url = self.d64(url)
-        data = requests.get(url, headers=self.headers, proxies=self.proxies, stream=True)
-        return [200, data.headers['Content-Type'], data.content]
-
-    def e64(self, text):
+    def _check_host(self, u):
         try:
-            text_bytes = text.encode('utf-8')
-            encoded_bytes = b64encode(text_bytes)
-            return encoded_bytes.decode('utf-8')
-        except Exception as e:
-            print(f"Base64编码错误: {str(e)}")
-            return ""
+            h = self.fetch(u + "/", timeout=8)
+        except Exception:
+            return False
+        return "<article" in h or "loadBannerDirect" in h
 
-    def d64(self, encoded_text):
+    # ---------- 缓存文件 ----------
+    def _cache_paths(self):
+        paths = []
         try:
-            encoded_bytes = encoded_text.encode('utf-8')
-            decoded_bytes = b64decode(encoded_bytes)
-            return decoded_bytes.decode('utf-8')
-        except Exception as e:
-            print(f"Base64解码错误: {str(e)}")
-            return ""
+            paths.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), self._CACHE_FILE))
+        except Exception:
+            pass
+        try:
+            paths.append(os.path.join(os.getcwd(), self._CACHE_FILE))
+        except Exception:
+            pass
+        try:
+            import tempfile
+            paths.append(os.path.join(tempfile.gettempdir(), self._CACHE_FILE))
+        except Exception:
+            pass
+        return paths
 
-    def get_working_host(self):
-        """Get working host from known dynamic URLs"""
-        # Known working URLs from the dynamic gateway
-        dynamic_urls = [
-            'https://artist.vgwtswi.xyz',
-            'https://ability.vgwtswi.xyz', 
-            'https://am.vgwtswi.xyz'
-        ]
-        
-        # Test each URL to find a working one
-        for url in dynamic_urls:
+    def _load_cache_file(self):
+        for p in self._cache_paths():
             try:
-                response = requests.get(url, headers=self.headers, proxies=self.proxies, timeout=10)
-                if response.status_code == 200:
-                    # Verify it has the expected content structure
-                    data = self.getpq(response.text)
-                    articles = data('#index article a')
-                    if len(articles) > 0:
-                        self.log(f"选用可用站点: {url}")
-                        print(f"选用可用站点: {url}")
-                        return url
-            except Exception as e:
+                with open(p, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                if d.get("host") and d.get("classes") and d.get("parents"):
+                    return d
+            except Exception:
                 continue
-        
-        # Fallback to first URL if none work (better than crashing)
-        self.log(f"未检测到可用站点，回退: {dynamic_urls[0]}")
-        print(f"未检测到可用站点，回退: {dynamic_urls[0]}")
-        return dynamic_urls[0]
+        return None
 
-    def getlist(self, data, tid=''):
-        videos = []
-        l = '/mrdg' in tid
-        for k in data.items():
-            a = k.attr('href')
-            b = k('h2').text()
-            # Some pages might not include datePublished; use a fallback
-            c = k('span[itemprop="datePublished"]').text() or k('.post-meta, .entry-meta, time').text()
-            if a and b:
-                videos.append({
-                    'vod_id': f"{a}{'@folder' if l else ''}",
-                    'vod_name': b.replace('\n', ' '),
-                    'vod_pic': self.getimg(k('script').text()),
-                    'vod_remarks': c or '',
-                    'vod_tag': 'folder' if l else '',
-                    'style': {"type": "rect", "ratio": 1.33}
-                })
-        return videos
+    def _save_cache_file(self, cfg):
+        for p in self._cache_paths():
+            try:
+                with open(p, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, ensure_ascii=False)
+                return
+            except Exception:
+                continue
 
-    def getfod(self, id):
-        url = f"{self.host}{id}"
-        data = self.getpq(requests.get(url, headers=self.headers, proxies=self.proxies).text)
-        vdata=data('.post-content[itemprop="articleBody"]')
-        r=['.txt-apps','.line','blockquote','.tags','.content-tabs']
-        for i in r:vdata.remove(i)
-        p=vdata('p')
-        videos=[]
-        for i,x in enumerate(vdata('h2').items()):
-            c=i*2
-            videos.append({
-                'vod_id': p.eq(c)('a').attr('href'),
-                'vod_name': p.eq(c).text(),
-                'vod_pic': f"{self.getProxyUrl()}&url={p.eq(c+1)('img').attr('data-xkrkllgl')}&type=img",
-                'vod_remarks':x.text()
-                })
-        return videos
+    def _default_config(self):
+        # 兜底: 仅当站点和缓存都不可用时使用，保持最小硬编码
+        return {
+            "host": self._host_candidates[0].rstrip("/"),
+            "classes": [
+                {"type_id": "wpcz", "type_name": "今日吃瓜", "type_extend": {}},
+                {"type_id": "吃瓜热门", "type_name": "吃瓜热门",
+                 "type_extend": {"class": [{"n": "学生校园", "v": "xsxy"},
+                                           {"n": "网红黑料", "v": "whhl"},
+                                           {"n": "热门大瓜", "v": "rdsj"},
+                                           {"n": "吃瓜榜单", "v": "mrdg"},
+                                           {"n": "必看大瓜", "v": "bkdg"}]}},
+                {"type_id": "cbdj", "type_name": "AI成人短剧", "type_extend": {}},
+                {"type_id": "娱乐天地", "type_name": "娱乐天地",
+                 "type_extend": {"class": [{"n": "影视娱乐", "v": "ysyl"},
+                                           {"n": "每日热搜", "v": "mrds"},
+                                           {"n": "恋爱基地", "v": "lldd"},
+                                           {"n": "搞钱省钱", "v": "gcjq"},
+                                           {"n": "童辉合集", "v": "thjx"},
+                                           {"n": "万花集锦", "v": "whhj"}]}},
+            ],
+            "parents": {"吃瓜热门": ["xsxy", "whhl", "rdsj", "mrdg", "bkdg"],
+                        "娱乐天地": ["ysyl", "mrds", "lldd", "gcjq", "thjx", "whhj"]},
+            "fetched_at": time.time(),
+        }
 
-    def getimg(self, text):
-        match = re.search(r"loadBannerDirect\('([^']+)'", text)
-        if match:
-            url = match.group(1)
-            return f"{self.getProxyUrl()}&url={url}&type=img"
-        else:
-            return ''
-
-    def aesimg(self, word):
-        key = b'f5d965df75336270'
-        iv = b'97b60394abc2fbe1'
-        cipher = AES.new(key, AES.MODE_CBC, iv)
-        decrypted = unpad(cipher.decrypt(word), AES.block_size)
-        return decrypted
-
-    def getpq(self, data):
+    # ---------- 内部工具 ----------
+    def fetch(self, url, hdr=None, timeout=15):
+        headers = self.headers
+        if hdr:
+            headers = dict(self.headers)
+            headers.update(hdr)
         try:
-            return pq(data)
-        except Exception as e:
-            print(f"{str(e)}")
-            return pq(data.encode('utf-8'))
+            import requests
+            r = requests.get(url, headers=headers, timeout=timeout, verify=False)
+            if r.status_code == 200 and r.text:
+                return r.text
+        except Exception:
+            pass
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            try:
+                resp = urllib.request.urlopen(req, context=self.ctx, timeout=timeout)
+            except TypeError:
+                resp = urllib.request.urlopen(req, timeout=timeout)
+            return resp.read().decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+
+    def _fix_url(self, u):
+        if not u:
+            return ""
+        u = u.strip()
+        if u.startswith("//"):
+            u = "https:" + u
+        elif u.startswith("/"):
+            u = self.host + u
+        if not (u.startswith("http://") or u.startswith("https://")):
+            return u
+        # 站点加密图片（xustgq.cn）走解密代理；其他图直连
+        if "xustgq.cn" in u:
+            return self.img_proxy + urllib.parse.quote(u, safe="")
+        return u
+
+    def _clean(self, s):
+        return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", s or "")).strip()
+
+    def _parse_list(self, html):
+        # 解析 article 列表，过滤广告外链（无 /archives/ 链接或 h2 的丢弃）
+        items = []
+        seen = set()
+        if not html:
+            return items
+        for m in re.finditer(r'<article[\s\S]*?</article>', html):
+            block = m.group(0)
+            am = re.search(r'<a[^>]*href="(/archives/(\d+)/)"', block)
+            if not am:
+                continue
+            vid = am.group(2)
+            if vid in seen:
+                continue
+            hm = re.search(r'<h2[^>]*>([\s\S]*?)</h2>', block)
+            if not hm:
+                continue
+            title = self._clean(hm.group(1))
+            if not title:
+                continue
+            seen.add(vid)
+            pic = ""
+            pm = re.search(r"loadBannerDirect\(['\"]([^'\"]+)['\"]", block)
+            if pm:
+                pic = self._fix_url(pm.group(1))
+            rem = ""
+            dm = re.search(r'<span[^>]*itemprop="datePublished"[^>]*>([^<]*)', block)
+            if dm:
+                rem = self._clean(dm.group(1))
+            items.append({
+                "vod_id": vid,
+                "vod_name": title,
+                "vod_pic": pic,
+                "vod_remarks": rem,
+            })
+        return items

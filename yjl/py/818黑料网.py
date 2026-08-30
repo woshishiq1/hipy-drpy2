@@ -1,6 +1,7 @@
 import json
 import re
 import sys
+import random
 import hashlib
 from base64 import b64decode, b64encode
 from urllib.parse import urlparse
@@ -46,17 +47,41 @@ class Spider(BaseSpider):
         img_cache.clear()
 
     def get_working_host(self):
-        dynamic_urls = [
-            'https://cell.lacdfsq.cc/'
-        ]
-        for url in dynamic_urls:
+        publish_urls = ['https://818hl30.com/']
+        words = ['able', 'action', 'album', 'award', 'ahead', 'agent', 'afraid', 'across', 'among', 'aside']
+        suffixes = ['.gqtztawx.cc', '.vdsrmzfge.cc']
+
+        for url in publish_urls:
             try:
                 response = requests.get(url, headers=self.headers, proxies=self.proxies, timeout=10)
+                if response.status_code != 200: continue
+                text = response.text
+                m = re.search(r"words = '([^']+)'\.split", text)
+                if m and len(m.group(1).split(',')) > 10:
+                    words = m.group(1).split(',')
+                sfx = re.findall(r"words\.random\(\) \+ '([^']+)'", text)
+                if sfx:
+                    suffixes = list(dict.fromkeys(suffixes + sfx))
+            except Exception:
+                continue
+
+        random.shuffle(words)
+        candidates = ['https://cell.lacdfsq.cc/']
+        for w in words[:8]:
+            for s in suffixes:
+                candidates.append(f"https://{w}{s}/")
+
+        seen = set()
+        for url in candidates:
+            if url in seen: continue
+            seen.add(url)
+            try:
+                response = requests.get(url, headers=self.headers, proxies=self.proxies, timeout=5)
                 if response.status_code == 200:
                     return url
             except Exception:
                 continue
-        return dynamic_urls[0]
+        return candidates[0]
 
     def homeContent(self, filter):
         try:
