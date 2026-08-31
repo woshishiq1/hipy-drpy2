@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+#发送任意邮件可获取最新地址👉 国内：https://51cgf13.com📩 邮箱：chigua.com@pm.me🌍 海外：https://51cg1.com🔒 永久：https://chigua.com
+#邮箱1：chigua.com@pm.me邮箱2：51cgfun@pm.me邮箱3：51cgfun@gmail.com
 """
 51吃瓜网 TVBox 爬虫 - 动态配置版
 

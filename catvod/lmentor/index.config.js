@@ -53,6 +53,7 @@ var index_config_default = {
     password: "",
     refresh_token: "",
     device_id: "",
+    auth_client_id: "",
     user_id: ""
   },
   pan123: {

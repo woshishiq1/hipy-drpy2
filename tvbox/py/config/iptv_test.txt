@@ -3496,6 +3496,15 @@ Celestial Classic Movies,
 Cinemo,
 Tap Action Flix,
 Tap Movies,
+&flix HD,
+&pictures HD,
+&xplor HD,
+Star Gold 2,
+Star Gold HD,
+Star Gold Romance,
+Star Movies HD,
+Star Movies Select HD,
+Zee Talkies HD,
 
 电视剧🔁,#genre#
 科幻动作,
@@ -3907,6 +3916,7 @@ Viasat History,
 viju History,
 Нано ТВ HD,
 海洋,
+ETV Abhiruchi,
 
 动画片,#genre#
 青春动漫,

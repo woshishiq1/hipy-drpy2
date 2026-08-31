@@ -16,7 +16,8 @@ from base.spider import Spider as BaseSpider
 
 
 class Spider(BaseSpider):
-
+# 发送邮件获得最新地址
+# wanwushequ@gmail.com
     # 预设备用域名池
     DOMAINS = [
         "https://tju.bnmdquasi.cc",

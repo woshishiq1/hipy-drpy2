@@ -2,7 +2,7 @@
 # 夜社 yeshex.com Spider —— 影视仓/OK影视/WebHomeTV/PickTV 四壳通用
 # fix1: 保留 query 跟随重定向，避免随机反代丢参数导致列表为空
 # fix2: 加入完整分类树(主分类+子分类)，图片(漫画/写真)与小说全部接入
-
+#社回家计算器: yesx.cc【口令：93743】
 import re
 import json
 import base64

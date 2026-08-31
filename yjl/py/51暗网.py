@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+#51暗网最新入口：51awn4.com
+#51暗网官方邮箱：anwangchigua@gmail.com
+#永久域名：https://51aw.com
 """
 51暗网 TVBox 爬虫站源（自动获取可用域名）
 Typecho Mirages 主题 + DPlayer（data-config JSON）

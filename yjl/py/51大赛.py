@@ -1,3 +1,9 @@
+#51大赛最新地址
+#https://51hjds34.com
+#51大赛永久地址
+#https://51ds88.com
+#51大赛电报官方群 https://telegram.me/ttcg_6fun
+#发送任意内容至邮箱： bamam668@gmail.com 可获取最新地址
 import json
 import re
 import sys

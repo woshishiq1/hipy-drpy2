@@ -90,6 +90,12 @@
 			"type": 3,
 			"api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/萝莉岛[免翻] .py"
 		},
+                {
+      "key": "有料.py",
+      "name": "🐬有料.py[成人]｜🔞",
+      "type": 3,
+      "api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/有料.py"
+    }, 
         {
       "key": "小马大车",
       "name": "🐬小马大车.py[成人]｜🔞",
@@ -339,18 +345,12 @@
 			"type": 3,
 			"api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/黄色仓库.py"
 		},
-		{
-			"key": "jptt",
-			"name": "🐬禁片天堂.py｜🔞[成人]",
-			"type": 3,
-			"api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/禁片天堂.py"
-		},
         {      "key": "one点播",      "name": "🐬one点播4K.py(关梯)[短听画书][成人]｜🔞",      "type": 3,      "api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/one.py"    },
 		{
-			"key": "hgsq",
-			"name": "🐬韩国色情电影.py｜🔞[成人]",
+			"key": "爆片库.py",
+			"name": "🐬爆片库.py｜🔞[成人]",
 			"type": 3,
-			"api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/韩国色情电影.py"
+			"api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/爆片库.py"
 		},
 		{
 			"key": "smvm",
@@ -382,12 +382,6 @@
 			"name": "🐬香肠派对.py｜🔞[成人]",
 			"type": 3,
 			"api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/香肠派对.py"
-		},
-		{
-			"key": "123av",
-			"name": "🐬123AV.py｜🔞[成人]",
-			"type": 3,
-			"api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/123AV.py"
 		},
 		{
 			"key": "18av",
@@ -423,7 +417,7 @@
 			"key": "91porn",
 			"name": "🐬91porn.py｜🔞[成人]",
 			"type": 3,
-			"api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/91porn.py"
+			"api": "https://ghfast.top/https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/py/91Porn蝌蚪窝.py"
 		},
 		{
 			"key": "fullhd",

@@ -1,7 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-import sys, json, re, requests
+import sys, json, re, requests, urllib3
 from urllib.parse import quote, unquote
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 sys.path.append('..')
 from base.spider import Spider as BaseSpider
 
@@ -29,6 +30,8 @@ class Spider(BaseSpider):
         'Referer': 'https://heiliao.com/',
     }
     host = 'https://heiliao.com'
+    publish_urls = ['https://heiliao74.com/', 'https://hlgw18.com/', 'https://www.heiliao88.com/']
+    fallback_hosts = ['https://sridy.bolbdzrv.cc', 'https://b48tu.kypozbnd.cc', 'https://ds6r63epm75a1.cloudfront.net', 'https://heiliao.com']
     cat_map = {
         'hlcg': '最新黑料', 'jrrs': '今日热瓜', 'jqrm': '热门黑料', 'lsdg': '经典黑料',
         'xycg': '校园黑料', 'whhl': '网红黑料', 'fczq': '反差专区', 'ycsq': '原创社区',
@@ -38,11 +41,48 @@ class Spider(BaseSpider):
         'jqxs': '黑料小说', 'gchl': '官场爆料', 'hlkt': '黑料课堂', 'hlbg': '黑料爆改',
         'ttzz': '桃图杂志', 'mrrb': '日榜黑料', 'zbjx': '周榜精选', 'ybrg': '月榜热瓜',
     }
-    ad_ids = {'39668', '8148', '8147', '8150', '8146', '38757', '41525', '109358', '109356'}
+    ad_ids = {'39668', '8148', '8147', '8150', '8146', '38757', '41525', '109358', '109356', '106394', '97869'}
     ad_keywords = ('黑料网最新入口', '黑料网海外主站', '黑料APP', '获取最新地址', '发送任意内容至')
+    list_ad_keywords = (
+        '全新上线', '正式入驻', 'App Store', 'AppStore', 'APP下载', 'App下载', 'App官方',
+        '官方运营', '外围招募', '主播/外围', '最新入口', '回家路',
+        '棋牌', '娱乐城', '开元', '约炮', 'PG电子', 'PG免费', 'PG娱乐', '官方PG', '官方开元',
+    )
 
     def init(self, extend=""):
         self.session = requests.Session()
+        self.host = self.get_working_host()
+        self.headers = dict(self.headers)
+        self.headers['Referer'] = self.host + '/'
+
+    def get_working_host(self):
+        candidates = []
+        for pu in self.publish_urls:
+            try:
+                r = requests.get(pu, headers=self.headers, timeout=8, verify=False)
+                if r.status_code != 200:
+                    continue
+                r.encoding = r.apparent_encoding or 'utf-8'
+                for href in re.findall(r'<a[^>]*class="[^"]*line-long[^"]*"[^>]*href="([^"]+)"', r.text):
+                    h = href.strip().rstrip('/')
+                    if h.startswith('http') and h not in candidates:
+                        candidates.append(h)
+            except Exception:
+                continue
+        for c in self.fallback_hosts:
+            if c not in candidates:
+                candidates.append(c)
+        for c in candidates:
+            try:
+                r = requests.get(c + '/', headers=self.headers, timeout=6, verify=False)
+                if r.status_code != 200:
+                    continue
+                r.encoding = r.apparent_encoding or 'utf-8'
+                if 'video-item' in r.text:
+                    return c
+            except Exception:
+                continue
+        return self.fallback_hosts[0]
 
     def _get(self, url):
         try:
@@ -83,6 +123,8 @@ class Spider(BaseSpider):
             alt_m = re.search(r'alt=["\']([^"\']+)["\']', b)
             title = alt_m.group(1).strip() if alt_m else ''
             if not title:
+                continue
+            if any(kw in title for kw in self.list_ad_keywords):
                 continue
             items.append({"vod_id": pid, "vod_name": title, "vod_pic": self._clean_pic(pic)})
         return items

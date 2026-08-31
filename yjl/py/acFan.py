@@ -1,5 +1,7 @@
 #!/usr/bin/python
 # coding=utf-8
+#发任意消息到邮箱，自动获取回家地址
+#邮箱地址： acfancom430@gmail.com
 import re, json, requests
 from urllib.parse import quote, unquote
 
