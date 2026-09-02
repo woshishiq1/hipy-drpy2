@@ -9,6 +9,7 @@ import time
 import os
 import hashlib
 import urllib.request
+import urllib.error
 import urllib.parse
 import ssl
 from urllib.parse import quote
@@ -186,6 +187,17 @@ class Spider(Spider):
                 break
         return result
 
+    def _decode_err(self, blob):
+        """解析 decode/url 错误响应的 protobuf: field1=code, field2=msg"""
+        try:
+            fields = self._parse_decode_response(blob)
+            code = fields.get(1, 0)
+            msg = fields.get(2, b'')
+            if isinstance(msg, bytes):
+                msg = msg.decode('utf-8', errors='replace')
+            return code, msg
+        except Exception:
+            return 0, ""
     def _decode_url(self, token, play_from):
         """调用 decode/url 接口, 返回真实可播放地址; 失败返回空串"""
         try:
@@ -198,6 +210,8 @@ class Spider(Spider):
             req.add_header("User-Agent", self.ua)
             req.add_header("X-Client", self.x_client)
             req.add_header("web-sign", self.web_sign)
+            req.add_header("Referer", f"{self.host}/")
+            req.add_header("Origin", self.host)
             cookie = self._get_cookie()
             if cookie:
                 req.add_header("Cookie", cookie)
@@ -206,6 +220,14 @@ class Spider(Spider):
             url = fields.get(3)
             if url and url.startswith(b"http"):
                 return url.decode('utf-8', errors='replace')
+        except urllib.error.HTTPError as e:
+            # 403等错误响应体也是protobuf: field2为服务端风控提示(如"当前IP已被禁止使用解析服务")
+            try:
+                code, msg = self._decode_err(e.read())
+                if msg:
+                    print(f'decode_url rejected [{code}]: {msg}')
+            except Exception:
+                print(f'decode_url http error: {e}')
         except Exception as e:
             print(f'decode_url error: {e}')
         return ""

@@ -1,6 +1,21 @@
 {
  "sites": [
   {
+   "key": "上海看看",
+   "name": "上海看看",
+   "type": 3,
+   "api": "./py/wxty.py"
+  },
+  {
+   "key": "py_leaves",
+   "name": "四叶草[py]",
+   "type": 3,
+   "api": "./py/syc_spider.py",
+   "searchable": 1,
+   "quickSearch": 1,
+   "changeable": 1
+  },
+  {
    "key": "youtube",
    "name": "YouTube",
    "type": 3,

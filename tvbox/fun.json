@@ -1047,6 +1047,28 @@
    "quickSearch": 1,
    "filterable": 1,
    "ext": "proxy"
+  },
+  {
+   "key": "火速",
+   "name": "火速 | 采集",
+   "type": 1,
+   "api": "https://api.huosuapi.cc/api.php/provide/vod/",
+   "playUrl": "",
+   "searchable": 1,
+   "quickSearch": 1,
+   "filterable": 1,
+   "ext": "proxy"
+  },
+  {
+   "key": "嘿嘿场",
+   "name": "嘿嘿 | 采集",
+   "type": 1,
+   "api": "https://api.heiapi.cc/api.php/provide/vod/",
+   "playUrl": "",
+   "searchable": 1,
+   "quickSearch": 1,
+   "filterable": 1,
+   "ext": "proxy"
   }
  ],
  "lives": [

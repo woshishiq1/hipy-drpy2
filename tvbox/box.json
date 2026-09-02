@@ -40,6 +40,15 @@
    }
   },
   {
+   "key": "py_juzong",
+   "name": "剧踪[py]",
+   "type": 3,
+   "api": "./py/juzong.py",
+   "searchable": 1,
+   "quickSearch": 1,
+   "filterable": 1
+  },
+  {
    "key": "py_libvio",
    "name": "LIBVIO[py]",
    "type": 3,
@@ -185,6 +194,15 @@
    "name": "多多影视[py]",
    "type": 3,
    "api": "./py/duoduo.py",
+   "searchable": 1,
+   "quickSearch": 1,
+   "changeable": 1
+  },
+  {
+   "key": "py_juok3",
+   "name": "剧OK[py]",
+   "type": 3,
+   "api": "./py/juok3.py",
    "searchable": 1,
    "quickSearch": 1,
    "changeable": 1
@@ -1308,7 +1326,9 @@
    ]
   }
  ],
- "proxy": [],
+ "proxy": [
+  "userlocations.googleapis.com"
+ ],
  "hosts": [],
  "rules": [
   {

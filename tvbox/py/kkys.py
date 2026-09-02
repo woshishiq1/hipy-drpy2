@@ -106,13 +106,10 @@ class Spider(Spider):
 			return False
 
 	def _referer(self, url):
-		# ts 分片防盗链要求 Referer 精确等于 m3u8 去 query 的地址,域名根会返回 3 字节 "OK\n"
-		u = url or ""
-		hm = re.match(r'(https?://[^/]+/[^\s?]+\.m3u8)', u)
-		if hm:
-			return hm.group(1)
-		hm = re.match(r'(https?://[^/]+)', u)
-		return hm.group(1) + "/" if hm else self.host + "/"
+		# 统一使用站点标准 host 作为 Referer:
+		# 实测该 CDN 对 m3u8/ts 均接受 host 根地址;精确 m3u8 地址反而
+		# 在部分线路(ts 分片)触发防盗链返回 3 字节 "OK\n"
+		return self.host + "/"
 
 	def _play_lines(self, tree):
 		# 详情页“切换线路”与“选集播放”通过索引一一对应,这里成对提取。
