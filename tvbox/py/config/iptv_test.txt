@@ -3505,6 +3505,10 @@ Star Gold Romance,
 Star Movies HD,
 Star Movies Select HD,
 Zee Talkies HD,
+B4U Movies APAC,
+KPVM Movies!,
+Мир Сериала,
+НТВ Хит,
 
 电视剧🔁,#genre#
 科幻动作,
@@ -3917,6 +3921,7 @@ viju History,
 Нано ТВ HD,
 海洋,
 ETV Abhiruchi,
+KPVM Story Television,
 
 动画片,#genre#
 青春动漫,
@@ -6643,6 +6648,7 @@ Solar Sports,
 Tap Edge,
 beIN Sports 1,
 beIN Sports 2,
+咪咕足球,
 
 少儿,#genre#
 央视少儿,
@@ -6742,6 +6748,8 @@ Transformers TV,
 蜡笔小新,
 奥特曼,
 Cartoon Channel PH,
+Sony Yay!,
+УТРК Баластан,
 
 音乐,#genre#
 MTV Live,
@@ -6807,6 +6815,8 @@ Zoom Global,
 Myx,
 Rock of Manila TV,
 音乐现场,
+B4U Hitz,
+KPVM Ace Country Radio,
 
 新闻,#genre#
 TVBS新闻,
@@ -6956,6 +6966,8 @@ DZRHTV,
 中天新闻,
 Redseat The First,
 TGCom 24,
+Channel Y,
+KPVM OAN Plus,
 
 财经,#genre#
 央视财经,

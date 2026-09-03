@@ -146,17 +146,13 @@ tags: [sing-box, sing-boxr, ShellCrash, ruleset, rule_set, 分享, Router]
 }
 ```
 
-## 二、 导入 [sing-box reF1nd 版内核](https://github.com/reF1nd/sing-box)和 [CN_IP 文件](https://github.com/DustinWin/geoip)
+## 二、 导入 [CN_IP 文件](https://github.com/DustinWin/geoip)
 连接 SSH 后执行如下命令：
 
 ```shell
-curl -sS -o /tmp/CrashCore.upx -L https://ghfast.top/https://github.com/DustinWin/proxy-tools/releases/download/sing-box/sing-box-ref1nd-stable-linux-arm64.upx
 curl -sS -o $CRASHDIR/cn_ip.txt -L https://cdn.jsdelivr.net/gh/DustinWin/geoip@ips/cn_ipv4.txt
 curl -sS -o $CRASHDIR/cn_ipv6.txt -L https://cdn.jsdelivr.net/gh/DustinWin/geoip@ips/cn_ipv6.txt
-sc
 ```
-
-此时脚本会自动“发现可用的内核文件”，选择 1 加载，后选择 5 Sing-Box-reF1nd 内核
 
 ## 三、 编辑 dns.json 文件
 连接 SSH 后执行命令 `vi $CRASHDIR/jsons/dns.json`，按一下 Ins 键（Insert 键），粘贴如下内容：
@@ -301,10 +297,10 @@ sc
 按一下 Esc 键（退出键），输入英文冒号 `:`，继续输入 `wq` 并回车
 
 ## 六、 添加定时任务
-可参考《[ShellCrash 搭载 sing-boxr 内核的配置-ruleset 方案/添加定时任务](https://proxy-tutorials.dustinwin.cc.cd/posts/toolsettings-shellcrash-singboxr-ruleset/#%E4%BA%8C-%E6%B7%BB%E5%8A%A0%E5%AE%9A%E6%97%B6%E4%BB%BB%E5%8A%A1)》
+可参考《[ShellCrash 搭载 sing-boxr 内核的配置-ruleset 方案/添加定时任务](https://proxy-tutorials.dustinwin.cc.cd/posts/toolsettings-shellcrash-singboxr-ruleset/#%E4%B8%80-%E6%B7%BB%E5%8A%A0%E5%AE%9A%E6%97%B6%E4%BB%BB%E5%8A%A1)》
 
 ## 七、 设置部分
-1. 设置可参考《[ShellCrash 搭载 sing-boxr 内核的配置-ruleset 方案/设置部分](https://proxy-tutorials.dustinwin.cc.cd/posts/toolsettings-shellcrash-singboxr-ruleset/#%E4%B8%89-%E8%AE%BE%E7%BD%AE%E9%83%A8%E5%88%86)》，此处只列举配置的不同之处
+1. 设置可参考《[ShellCrash 搭载 sing-boxr 内核的配置-ruleset 方案/设置部分](https://proxy-tutorials.dustinwin.cc.cd/posts/toolsettings-shellcrash-singboxr-ruleset/#%E4%BA%8C-%E8%AE%BE%E7%BD%AE%E9%83%A8%E5%88%86)》，此处只列举配置的不同之处
 2. 进入 ShellCrash 配置脚本 → 2) 功能设置 → 2) DNS 设置 → 9) 修改 DNS 服务器，设置如下：  
 <img src="/assets/img/dns/dns-null.png" alt="设置部分 2" width="60%" />
 
@@ -315,6 +311,11 @@ sc
 1. 打开 zashboard 在线面板地址 <http://board.zash.run.place> 后，可直接在“[Clash API](https://sing-boxr.dustinwin.cc.cd/zh/configuration/experimental/clash-api/)”标签里将“主机”修改为 `192.168.31.1`，点击“提交”即可访问 Dashboard
 2. 进入设置 → 后端设置，点击“+”图标，切换到“[sing-box API](https://sing-boxr.dustinwin.cc.cd/zh/configuration/service/api/)”标签，将“主机”和“端口分别修改为 `192.168.31.1` 和 `9999` 并点击“提交”
 3. 通过切换后端配置可以分别使用 Clash API（支持“代理提供商”和“规则提供商”的更新）和 sing-box API Dashboard 面板
+
+> 特别提醒
+{: .prompt-warning }
+1. zashboard 已[在 v3.23.0 版本中移除了对 sing-box 的支持](https://github.com/Zephyruso/zashboard/blob/main/docs/sing-box-deprecation.md)，最后支持 sing-box 的版本为 [v3.22.0](https://github.com/Zephyruso/zashboard/releases/tag/v3.22.0)
+2. 通过 Clash API 的方式仍可正常使用
 
 > 推荐设置
 {: .prompt-tip }
