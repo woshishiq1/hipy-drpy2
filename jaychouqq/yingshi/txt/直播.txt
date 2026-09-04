@@ -7,6 +7,8 @@
 {"name":"🥘台湾直播👿","url":"http://mqitv.magicluweibo1.hz.cz:11601/twhotel.txt&&&http://api.btstu.cn/sjbz/"},
 {"name":"🥘精彩直播👿","url":"https://cdn.qd.je/live.m3u&&&http://api.btstu.cn/sjbz/"},
 {"name":"🥘国外直播👿","url":"https://proxy.api.030101.xyz/iptv-org.github.io/iptv/index.m3u&&&http://api.btstu.cn/sjbz/"},
+{"name":"🥘18直播👿","url":"https://gh-proxy.com/https://raw.githubusercontent.com/wliqi495-create/jaychouqq/refs/heads/main/crzb1.m3u&&&http://api.btstu.cn/sjbz/"},
+{"name":"🥘78直播👿","url":"http://88.212.7.11/live/test_basbes_hd_hevc/playlist.m3u8&&&http://api.btstu.cn/sjbz/"},
 {"name":"🥘国际直播👿","url":"http://tv123.vvvv.ee/tv.m3u&&&http://api.btstu.cn/sjbz/"},
 {"name":"🥘18+👿","url":"https://gitee.com/sji820/des/raw/master/0.jpg&&&http://api.btstu.cn/sjbz/"},
 {"name":"🥘jackTV👿","url":"https://php.946985.filegear-sg.me/jackTV.m3u&&&http://api.btstu.cn/sjbz/"},

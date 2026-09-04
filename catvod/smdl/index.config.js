@@ -84,6 +84,7 @@ var index_config_default = {
     url: "",
     channelUsername: ""
   },
+  tgchannel: {},
   sites: {
     list: []
   },

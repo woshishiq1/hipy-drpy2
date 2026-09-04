@@ -61,7 +61,7 @@ var index_config_default = {
     password: ""
   },
   muou: {
-    urls: ["https://123.666291.xyz", "https://666.666291.xyz", "https://www.muou.asia", "https://www.muou.site"]
+    urls: ["https://333.333291.xyz", "https://666.666291.xyz", "https://www.muoua.top"]
   },
   wogg: {
     urls: ["https://wogg.333232.xyz", "https://wogg.xxooo.cf", "https://woggpan.888484.xyz", "https://www.wogg.lol", "https://www.wogg.one"]
@@ -147,6 +147,9 @@ var index_config_default = {
     }
   },
   t4: {
+    list: []
+  },
+  catpaw: {
     list: []
   },
   cms: {
