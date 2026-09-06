@@ -1,6 +1,8 @@
+var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __export = (target, all) => {
   for (var name in all)
@@ -14,6 +16,14 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/index.config.js
@@ -22,21 +32,85 @@ __export(index_config_exports, {
   default: () => index_config_default
 });
 module.exports = __toCommonJS(index_config_exports);
+
+// src/util/network.js
+var import_os = __toESM(require("os"), 1);
+var findIPv4 = (IPInfos) => {
+  return IPInfos?.find((item) => item.family === "IPv4")?.address;
+};
+var getIPAddress = function() {
+  const interfaces = import_os.default.networkInterfaces();
+  return findIPv4(interfaces["en0"]) || findIPv4(interfaces["en1"]) || findIPv4(interfaces["en2"]) || "127.0.0.1";
+};
+
+// src/index.config.js
 var index_config_default = {
-  customSpiders: {
-    enabled: true,
-    dir: "",
-    urls: [],
-    strict: false,
-    allowOverride: false,
-    cacheTtlMs: 5e3,
-    factoryTimeoutMs: 1e4,
-    urlTimeoutMs: 1e4
+  ali: {
+    token: "",
+    token280: "token280"
+  },
+  quark: {
+    cookie: ""
+  },
+  uc: {
+    cookie: "cookie",
+    token: "token",
+    ut: "ut"
+  },
+  y115: {
+    cookie: ""
+  },
+  baidu: {
+    cookie: ""
   },
   bili: {
-    cookie: "",
-    json: "https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/Bilibili/BLHJ.json"
+    cookie: ""
   },
+  muou: {
+    url: ""
+  },
+  wogg: {
+    url: ""
+  },
+  woniu: {
+    url: ""
+  },
+  leijing: {
+    url: ""
+  },
+  tgsou: {
+    tgPic: false,
+    count: 0,
+    url: "",
+    channelUsername: ""
+  },
+  tgchannel: {},
+  sites: {
+    list: []
+  },
+  pans: {
+    list: []
+  },
+  danmu: {
+    urls: [{ address: `http://${getIPAddress()}:9321`, name: "内置" }],
+    autoPush: true
+  },
+  t4: {
+    list: []
+  },
+  cms: {
+    list: []
+  },
+  alist: [
+    {
+      name: "🐉神族九帝",
+      server: "https://alist.shenzjd.com"
+    },
+    {
+      name: "💢repl",
+      server: "https://ali.liucn.repl.co"
+    }
+  ],
   color: [
     {
       light: {

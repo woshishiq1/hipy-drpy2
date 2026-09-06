@@ -22,10 +22,11 @@ class Spider(Spider):
     def homeContent(self, filter):
         result = {}
         classes = [
-            {"type_name": "电影台", "type_id": "TV电影台"},
-            {"type_name": "体育台", "type_id": "TV体育台"},
-			{"type_name": "港台", "type_id": "TV港台"},
-			{"type_name": "🔞+直播台", "type_id": "🔞+直播台"},
+            {"type_name": "电影台", "type_id": "📺电影台"},
+            {"type_name": "体育台", "type_id": "📺体育台"},
+			{"type_name": "港台", "type_id": "📺港台"},
+			{"type_name": "🔞+直播台", "type_id": "📺直播台🔞"},
+			{"type_name": "🔞午夜剧场", "type_id": "📺午夜剧场🔞(挂梯)"},
 			{"type_name": "港台三级🔞", "type_id": "港台三级🔞"}
         ]
         result['class'] = classes
@@ -37,7 +38,7 @@ class Spider(Spider):
 
         # 频道数据
         channels = {
-            "TV电影台": [
+            "📺电影台": [
                 {"name": "CCTV6电影", "url": "http://107.150.60.122/live/cctv6hd.m3u8"},
                 {"name": "NOW爆谷台", "url": "http://173.208.234.146/live/nowbg.m3u8"},
                 {"name": "NOW星影台", "url": "http://173.208.234.146/live/nowxy.m3u8"},
@@ -47,33 +48,58 @@ class Spider(Spider):
 				{"name": "靖天电影", "url": "http://iptv.4666888.xyz/iptv2A.php?id=56"},
 				{"name": "東森电影", "url": "http://iptv.4666888.xyz/iptv2A.php?id=48"},
             ],
-            "TV体育台": [
+            "📺体育台": [
                 {"name": "CCTV5体育*线路1", "url": "http://173.208.212.130:8181/1080p/cctv5.m3u8"},
 				{"name": "CCTV5体育*线路2", "url": "https://php.jdshipin.com:2096/TVOD/iptv.php?id=cctv5"},
 				{"name": "CCTV5+体育赛事", "url": "http://107.150.60.122/live/cctv5p.m3u8"},
 				{"name": "CCTV16奥林匹克*线路1", "url": "http://207.56.13.146:81/cdnlive/cctv16.m3u8"},
 				{"name": "CCTV16奥林匹克*线路2", "url": "https://php.jdshipin.com:2096/TVOD/iptv.php?id=cctv16"},
             ],
-			"TV港台": [
+			"📺港台": [
                 {"name": "翡翠台*线路1", "url": "http://183.62.8.58:50085/tsfile/live/0017_1.m3u8?key=txiptv&playlive=1&authid=0"},
 				{"name": "翡翠台*线路2(挂梯)", "url": "https://cdn.qd.je/163189.php?id=fct"},
 				{"name": "翡翠台4K(挂梯)", "url": "https://cdn3.indevs.in/stream/tvb/fct4k/"},
 				],
-			"🔞+直播台": [
+			"📺直播台🔞": [
                 {"name": "俄罗斯极限电影台", "url": "http://ef90a6cd.rossteleccom.net/iptv/2TBC4G2WWDG6RSUSN5SXSQEC/14158/index.m3u8"},
-				{"name": "极限电影台", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c855fdf/index.m3u8"},
 				{"name": "惊艳台*线路1", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/85.ts"},
 				{"name": "惊艳台*线路2", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/87.ts"},
 				{"name": "潘多啦完美", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/86.ts"},
-				{"name": "香蕉台", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/117.ts"},
+				{"name": "香蕉台HD", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/117.ts"},
 				{"name": "松视1", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/88.ts"},
 				{"name": "松视2", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/89.ts"},
 				{"name": "松视3", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/90.ts"},
-				{"name": "HAPPY", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/mdfdc125/index.m3u8"},
-				{"name": "彩虹E", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c855daa/index.m3u8"},
+				{"name": "松视4", "url": "http://58.99.33.2:1935/liveedge2/QWXxqkAC_404_1/chunklist_w.m3u8?checkCode=37050688asdfsdfsadf&aa=60999&as=abcdefg&mmmm=&dr=123&dt=&cust_type=NE"},
+				{"name": "HOT", "url": "http://58.99.33.2:1935/liveedge2/QWXxqkAC_403_1/chunklist_w.m3u8?checkCode=37050688asdfsdfsadf&aa=60999&as=abcdefg&mmmm=&dr=123&dt=&cust_type=NE"},
+				{"name": "彩虹R", "url": "http://58.99.33.2:1935/liveedge2/QWXxqkAC_408_1/chunklist_w.m3u8?checkCode=37050688asdfsdfsadf&aa=60999&as=abcdefg&mmmm=&dr=123&dt=&cust_type=NE"},
+				{"name": "樂活頻道", "url": "http://58.99.33.2:1935/liveedge2/QWXxqkAC_410_1/chunklist_w.m3u8?checkCode=37050688asdfsdfsadf&aa=60999&as=abcdefg&mmmm=&dr=123&dt=&cust_type=NE8"},
 				{"name": "奧視", "url": "http://125.227.210.55:1022/VideoInput/play.ts"},
 				{"name": "奧視2", "url": "http://125.227.210.55:3031/VideoInput/play.ts"},
-			],
+			    ],
+			"📺午夜剧场🔞(挂梯)": [
+		        {"name": "极限电影台", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c855fdf/index.m3u8"},	
+		        {"name": "🌲松视1️⃣台", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c85giea/index.m3u8"},	
+		        {"name": "🌲松视2️⃣台", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c85fsaf/index.m3u8"},	
+                {"name": "🍌香焦台HD", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/mdfdc123/index.m3u8"},
+		        {"name": "潘多啦完美", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c855d75/index.m3u8"},
+		        {"name": "HAPPY", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/mdfdc125/index.m3u8"},
+				{"name": "🌈🅴彩虹E", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c855daa/index.m3u8"},
+		        {"name": "驚艷台HD", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/sajdxxzc/index.m3u8"},
+		        {"name": "M麻辣传媒", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/asdm3134/index.m3u8"},
+		        {"name": "中字➊", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8jainsbq/index.m3u8"},
+		        {"name": "中字➋", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/v19a2133/index.m3u8"},
+		        {"name": "中字➌", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/56ffe9b8/index.m3u8"},
+                {"name": "中字➍", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/2a8cba45/index.m3u8"},
+		        {"name": "中字➎", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/48a8dcb9/index.m3u8"},
+		        {"name": "中字➏", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/e8f7e463/index.m3u8"},
+		        {"name": "高清无码1", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/846a1ghm/index.m3u8"},
+		        {"name": "高清无码2", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/1bf4a301/index.m3u8"},
+		        {"name": "高清无码3", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/ahun18hg/index.m3u8"},
+		        {"name": "高清无码4", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/84a15gbc/index.m3u8"},
+		        {"name": "高清无码5", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/952a3vvv/index.m3u8"},
+		        {"name": "高清无码6", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/984fa1vb/index.m3u8"},
+		        {"name": "高清无码7", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/456oinav/index.m3u8"},
+                ],
 			"港台三级🔞": [
                 {"name": "1色降2之血玫瑰", "url": "https://vip1.lz-cdn1.com/20220331/733_58b741b7/index.m3u8"},
 				{"name": "2色降2之萬里驅魔", "url": "https://m3u8.cdn202511.com/videos/202411/21/673e5ba03276de039d31a162/7cd5f8/index.m3u8"},
@@ -133,7 +159,7 @@ class Spider(Spider):
         idx = int(tid_idx[1])
 
         channels = {
-            "TV电影台": [
+            "📺电影台": [
                 {"name": "CCTV6电影", "url": "http://107.150.60.122/live/cctv6hd.m3u8"},
                 {"name": "NOW爆谷台", "url": "http://173.208.234.146/live/nowbg.m3u8"},
                 {"name": "NOW星影台", "url": "http://173.208.234.146/live/nowxy.m3u8"},
@@ -143,33 +169,58 @@ class Spider(Spider):
 				{"name": "靖天电影", "url": "http://iptv.4666888.xyz/iptv2A.php?id=56"},
 				{"name": "東森电影", "url": "http://iptv.4666888.xyz/iptv2A.php?id=48"},
             ],
-            "TV体育台": [
+            "📺体育台": [
                 {"name": "CCTV5体育*线路1", "url": "http://173.208.212.130:8181/1080p/cctv5.m3u8"},
 				{"name": "CCTV5体育*线路2", "url": "https://php.jdshipin.com:2096/TVOD/iptv.php?id=cctv5"},
 				{"name": "CCTV5+体育赛事", "url": "http://107.150.60.122/live/cctv5p.m3u8"},
 				{"name": "CCTV16奥林匹克*线路1", "url": "http://207.56.13.146:81/cdnlive/cctv16.m3u8"},
 				{"name": "CCTV16奥林匹克*线路2", "url": "https://php.jdshipin.com:2096/TVOD/iptv.php?id=cctv16"},
             ],
-			"TV港台": [
+			"📺港台": [
                 {"name": "翡翠台*线路1", "url": "http://183.62.8.58:50085/tsfile/live/0017_1.m3u8?key=txiptv&playlive=1&authid=0"},
 				{"name": "翡翠台*线路2(挂梯)", "url": "https://cdn.qd.je/163189.php?id=fct"},
 				{"name": "翡翠台4K(挂梯)", "url": "https://cdn3.indevs.in/stream/tvb/fct4k/"},
 				],
-			"🔞+直播台": [
-                 {"name": "俄罗斯极限电影台", "url": "http://ef90a6cd.rossteleccom.net/iptv/2TBC4G2WWDG6RSUSN5SXSQEC/14158/index.m3u8"},
-				{"name": "极限电影台", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c855fdf/index.m3u8"},
+			"📺直播台🔞": [
+                {"name": "俄罗斯极限电影台", "url": "http://ef90a6cd.rossteleccom.net/iptv/2TBC4G2WWDG6RSUSN5SXSQEC/14158/index.m3u8"},
 				{"name": "惊艳台*线路1", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/85.ts"},
 				{"name": "惊艳台*线路2", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/87.ts"},
 				{"name": "潘多啦完美", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/86.ts"},
-				{"name": "香蕉台", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/117.ts"},
+				{"name": "香蕉台HD", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/117.ts"},
 				{"name": "松视1", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/88.ts"},
 				{"name": "松视2", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/89.ts"},
 				{"name": "松视3", "url": "http://15.204.105.50:25461/live/G2s9zK2n9m/xDtwVfWM8T/90.ts"},
-				{"name": "HAPPY", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/mdfdc125/index.m3u8"},
-				{"name": "彩虹E", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c855daa/index.m3u8"},
+				{"name": "松视4", "url": "http://58.99.33.2:1935/liveedge2/QWXxqkAC_404_1/chunklist_w.m3u8?checkCode=37050688asdfsdfsadf&aa=60999&as=abcdefg&mmmm=&dr=123&dt=&cust_type=NE"},
+				{"name": "HOT", "url": "http://58.99.33.2:1935/liveedge2/QWXxqkAC_403_1/chunklist_w.m3u8?checkCode=37050688asdfsdfsadf&aa=60999&as=abcdefg&mmmm=&dr=123&dt=&cust_type=NE"},
+				{"name": "彩虹R", "url": "http://58.99.33.2:1935/liveedge2/QWXxqkAC_408_1/chunklist_w.m3u8?checkCode=37050688asdfsdfsadf&aa=60999&as=abcdefg&mmmm=&dr=123&dt=&cust_type=NE"},
+				{"name": "樂活頻道", "url": "http://58.99.33.2:1935/liveedge2/QWXxqkAC_410_1/chunklist_w.m3u8?checkCode=37050688asdfsdfsadf&aa=60999&as=abcdefg&mmmm=&dr=123&dt=&cust_type=NE8"},
 				{"name": "奧視", "url": "http://125.227.210.55:1022/VideoInput/play.ts"},
 				{"name": "奧視2", "url": "http://125.227.210.55:3031/VideoInput/play.ts"},
-			],
+			    ],
+			"📺午夜剧场🔞(挂梯)": [
+		        {"name": "极限电影台", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c855fdf/index.m3u8"},	
+		        {"name": "🌲松视1️⃣台", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c85giea/index.m3u8"},	
+		        {"name": "🌲松视2️⃣台", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c85fsaf/index.m3u8"},	
+                {"name": "🍌香焦台HD", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/mdfdc123/index.m3u8"},
+		        {"name": "潘多啦完美", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c855d75/index.m3u8"},
+		        {"name": "HAPPY", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/mdfdc125/index.m3u8"},
+				{"name": "🌈🅴彩虹E", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8c855daa/index.m3u8"},
+		        {"name": "驚艷台HD", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/sajdxxzc/index.m3u8"},
+		        {"name": "M麻辣传媒", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/asdm3134/index.m3u8"},
+		        {"name": "中字➊", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/8jainsbq/index.m3u8"},
+		        {"name": "中字➋", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/v19a2133/index.m3u8"},
+		        {"name": "中字➌", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/56ffe9b8/index.m3u8"},
+                {"name": "中字➍", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/2a8cba45/index.m3u8"},
+		        {"name": "中字➎", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/48a8dcb9/index.m3u8"},
+		        {"name": "中字➏", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/e8f7e463/index.m3u8"},
+		        {"name": "高清无码1", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/846a1ghm/index.m3u8"},
+		        {"name": "高清无码2", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/1bf4a301/index.m3u8"},
+		        {"name": "高清无码3", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/ahun18hg/index.m3u8"},
+		        {"name": "高清无码4", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/84a15gbc/index.m3u8"},
+		        {"name": "高清无码5", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/952a3vvv/index.m3u8"},
+		        {"name": "高清无码6", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/984fa1vb/index.m3u8"},
+		        {"name": "高清无码7", "url": "http://x315601.serv00.net/cr.php?url=http://lc.aacalive.com:26789/i/ghjnvq5o/456oinav/index.m3u8"},
+                ],
 			"港台三级🔞": [
                 {"name": "1色降2之血玫瑰", "url": "https://vip1.lz-cdn1.com/20220331/733_58b741b7/index.m3u8"},
 				{"name": "2色降2之萬里驅魔", "url": "https://m3u8.cdn202511.com/videos/202411/21/673e5ba03276de039d31a162/7cd5f8/index.m3u8"},
@@ -213,7 +264,7 @@ class Spider(Spider):
                 "vod_pic": "",
                 "vod_remarks": tid,
                 "vod_content": ch["name"],
-                "vod_play_from": "直链",
+                "vod_play_from": "直播线路",
                 "vod_play_url": ch["url"]
             }
             result['list'] = [vod]

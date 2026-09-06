@@ -815,6 +815,7 @@ MOMO TV,
 靖洋戏剧,
 纬来育乐,
 东森超视,
+龙华偶像,
 
 央视台,#genre#
 CCTV-4K 高清,
@@ -3514,6 +3515,9 @@ Goldmines 2,
 Еврокино,
 Русский Иллюзион,
 Nash Bridges Channel,
+FilmBox,
+J Movie,
+MoreMax,
 
 电视剧🔁,#genre#
 科幻动作,
@@ -6981,6 +6985,10 @@ KPVM OAN Plus,
 ASTV News 1,
 Gulistan News,
 Jovem Pan News (JP News),
+CDTV,
+GS TV,
+HNN 24x7,
+India News Madhya Pradesh/Chhattisgarh,
 
 财经,#genre#
 央视财经,
