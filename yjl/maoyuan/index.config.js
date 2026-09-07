@@ -1,8 +1,6 @@
-var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __export = (target, all) => {
   for (var name in all)
@@ -16,14 +14,6 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/index.config.js
@@ -32,18 +22,6 @@ __export(index_config_exports, {
   default: () => index_config_default
 });
 module.exports = __toCommonJS(index_config_exports);
-
-// src/util/network.js
-var import_os = __toESM(require("os"), 1);
-var findIPv4 = (IPInfos) => {
-  return IPInfos?.find((item) => item.family === "IPv4")?.address;
-};
-var getIPAddress = function() {
-  const interfaces = import_os.default.networkInterfaces();
-  return findIPv4(interfaces["en0"]) || findIPv4(interfaces["en1"]) || findIPv4(interfaces["en2"]) || "127.0.0.1";
-};
-
-// src/index.config.js
 var index_config_default = {
   ali: {
     token: "",
@@ -55,15 +33,19 @@ var index_config_default = {
   uc: {
     cookie: "cookie",
     token: "token",
+    refreshtoken: "refreshtoken",
     ut: "ut"
   },
-  y115: {
-    cookie: ""
-  },
   baidu: {
+    cookie: "cookie"
+  },
+  wuming: {
     cookie: ""
   },
-  bili: {
+  douban: {
+    extend: ""
+  },
+  y115: {
     cookie: ""
   },
   muou: {
@@ -72,33 +54,58 @@ var index_config_default = {
   wogg: {
     url: ""
   },
-  woniu: {
+  zhizhen: {
     url: ""
+  },
+  duoduo: {
+    url: ""
+  },
+  huban: {
+    url: ""
+  },
+  erxiao: {
+    url: ""
+  },
+  guanying: {
+    url: ""
+  },
+  qwmkv: {
+    url: ""
+  },
+  qiwei: {
+    url: ""
+  },
+  jutou: {
+    url: ""
+  },
+  pan123ziyuan: {
+    cookie: ""
+  },
+  guangyazhenying: {
+    cookie: ""
+  },
+  panlian: {
+    account: "",
+    password: ""
   },
   leijing: {
     url: ""
   },
   tgsou: {
-    tgPic: false,
+    pic: false,
     count: 0,
     url: "",
     channelUsername: ""
   },
   tgchannel: {},
+  bili: {
+    categories: "https://raw.githubusercontent.com/YJL20190405/TVBOX/refs/heads/main/Bilibili/BLHJ.json",
+    cookie: ""
+  },
   sites: {
     list: []
   },
   pans: {
-    list: []
-  },
-  danmu: {
-    urls: [{ address: `http://${getIPAddress()}:9321`, name: "内置" }],
-    autoPush: true
-  },
-  t4: {
-    list: []
-  },
-  cms: {
     list: []
   },
   alist: [
@@ -114,7 +121,7 @@ var index_config_default = {
   color: [
     {
       light: {
-        bg: "https://i2.100024.xyz/2024/01/13/pptcej.webp",
+        bg: "https://fs-im-kefu.7moor-fs1.com/ly/4d2c3f00-7d4c-11e5-af15-41bf63ae4ea0/cefd4d3f5b8c5a66/photo_2025-08-01_11-09-06.jpg",
         bgMask: "0x50ffffff",
         primary: "0xff446732",
         onPrimary: "0xffffffff",
@@ -148,7 +155,7 @@ var index_config_default = {
         surfaceTint: "0xff446732"
       },
       dark: {
-        bg: "https://i2.100024.xyz/2024/01/13/pptg3z.webp",
+        bg: "https://fs-im-kefu.7moor-fs1.com/ly/4d2c3f00-7d4c-11e5-af15-41bf63ae4ea0/3885167c85e1c977/photo_2025-08-01_11-09-06 (2).jpg",
         bgMask: "0x50000000",
         primary: "0xffaad291",
         onPrimary: "0xff173807",
@@ -184,7 +191,7 @@ var index_config_default = {
     },
     {
       light: {
-        bg: "https://i2.100024.xyz/2024/01/13/pi2rpw.webp",
+        bg: "https://fs-im-kefu.7moor-fs1.com/ly/4d2c3f00-7d4c-11e5-af15-41bf63ae4ea0/cefd4d3f5b8c5a66/photo_2025-08-01_11-09-06.jpg",
         bgMask: "0x50ffffff",
         primary: "0xff666014",
         onPrimary: "0xffffffff",
@@ -218,7 +225,7 @@ var index_config_default = {
         surfaceTint: "0xff666014"
       },
       dark: {
-        bg: "https://i2.100024.xyz/2024/01/13/pi2reo.webp",
+        bg: "https://fs-im-kefu.7moor-fs1.com/ly/4d2c3f00-7d4c-11e5-af15-41bf63ae4ea0/3885167c85e1c977/photo_2025-08-01_11-09-06 (2).jpg",
         bgMask: "0x50000000",
         primary: "0xffd1c973",
         onPrimary: "0xff353100",
@@ -254,7 +261,7 @@ var index_config_default = {
     },
     {
       light: {
-        bg: "https://i2.100024.xyz/2024/01/13/qrnuwt.webp",
+        bg: "https://fs-im-kefu.7moor-fs1.com/ly/4d2c3f00-7d4c-11e5-af15-41bf63ae4ea0/66537cf7d0225c8e/photo_2025-08-01_16-02-38.jpg",
         bgMask: "0x50ffffff",
         primary: "0xFF2B6C00",
         onPrimary: "0xFFFFFFFF",
@@ -288,7 +295,7 @@ var index_config_default = {
         surfaceTint: "0xFF2B6C00"
       },
       dark: {
-        bg: "https://i2.100024.xyz/2024/01/13/qrc37o.webp",
+        bg: "https://fs-im-kefu.7moor-fs1.com/ly/4d2c3f00-7d4c-11e5-af15-41bf63ae4ea0/d026f7c9a068661a/photo_2025-08-01_16-02-39.jpg",
         bgMask: "0x50000000",
         primary: "0xFF8CDA60",
         onPrimary: "0xFF133800",

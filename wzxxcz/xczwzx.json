@@ -64,6 +64,12 @@
             "url": "https://0701.tv1288.xyz/m3u"
         },
 		{
+            "name": "卡卡西IPTV",
+            "type": 0,
+            "ua": "okhttp/5.3.2",
+            "url": "https://gh-proxy.org/https://raw.githubusercontent.com/kakaxi-1/IPTV/refs/heads/main/ipv4.txt"
+        },
+		{
             "name": "台湾4GTV直播",
             "type": 0,
             "ua": "okhttp/5.3.2",
@@ -1334,6 +1340,30 @@
             "name": "🍊CNFLIX影视",
             "type": 3,
             "api": "./py/CNFLIX.py"
+        },
+		{
+            "key": "云朵影视",
+            "name": "☁️云朵影视",
+            "type": 3,
+            "api": "./py/云朵影视.py"
+        },
+		{
+            "key": "华谊影视1",
+            "name": "🍊华谊影视1",
+            "type": 3,
+            "api": "./py/华谊影视.py"
+        },
+		{
+            "key": "6080新视觉",
+            "name": "🍊6080新视觉",
+            "type": 3,
+            "api": "./py/6080新视觉.py"
+        },
+		{
+            "key": "99短剧网",
+            "name": "🥂99短剧网",
+            "type": 3,
+            "api": "./py/99短剧网.py"
         },
 		{
             "key": "爬虫影视",
