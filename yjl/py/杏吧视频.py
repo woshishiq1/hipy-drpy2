@@ -111,37 +111,6 @@ class Spider(Spider):
             rows.append({"key": "videoTag", "name": "分类", "value": [{"n": t, "v": t} for t in part]})
         return rows
 
-    def _is_folder_id(self, value):
-        text = unquote(str(value or ""))
-        return text.startswith(self.FOLDER_PREFIX)
-
-    def _folder_keyword(self, value):
-        text = unquote(str(value or ""))
-        if text.startswith(self.FOLDER_PREFIX):
-            return text[len(self.FOLDER_PREFIX):]
-        return ""
-
-    def _keyword_folder_list(self, pg):
-        names = self._fetch_keyword_names()
-        page = int(pg) if str(pg).isdigit() else 1
-        if page < 1:
-            page = 1
-        limit = 20
-        start = (page - 1) * limit
-        chunk = names[start:start + limit]
-        videos = []
-        for name in chunk:
-            videos.append({
-                "vod_id": f"{self.FOLDER_PREFIX}{name}",
-                "vod_name": name,
-                "vod_pic": "",
-                "vod_remarks": "关键词",
-                "vod_tag": "folder"
-            })
-        total = len(names)
-        pagecount = (total + limit - 1) // limit if total else 1
-        return self._page_result(videos, page, pagecount=pagecount, limit=limit, total=total)
-
     def _search_url(self, tag, page):
         q = quote(tag)
         if str(page) == "1":
@@ -181,6 +150,26 @@ class Spider(Spider):
             print(e)
         self._keyword_cache = names
         return names
+
+    def _keyword_video_list(self, pg):
+        names = self._fetch_keyword_names()
+        page = int(pg) if str(pg).isdigit() else 1
+        if page < 1:
+            page = 1
+        limit = 20
+        start = (page - 1) * limit
+        chunk = names[start:start + limit]
+        videos = []
+        for name in chunk:
+            videos.append({
+                "vod_id": f"keyword:{name}",
+                "vod_name": name,
+                "vod_pic": "",
+                "vod_remarks": "关键词"
+            })
+        total = len(names)
+        pagecount = (total + limit - 1) // limit if total else 1
+        return self._page_result(videos, page, pagecount=pagecount, limit=limit, total=total)
 
     def _search_videos(self, tag, pg):
         videos = []
@@ -259,12 +248,10 @@ class Spider(Spider):
         tid = unquote(str(tid or ""))
         extend = self._parse_extend(extend)
         tag = str(extend.get("videoTag") or "").strip()
-        if self._is_folder_id(tid):
-            return self._search_videos(self._folder_keyword(tid), pg)
         if tag:
             return self._search_videos(tag, pg)
         if tid == self.KEYWORDS_TID:
-            return self._keyword_folder_list(pg)
+            return self._keyword_video_list(pg)
         videos = []
         page = str(pg) if pg else "1"
         try:
@@ -281,18 +268,6 @@ class Spider(Spider):
         try:
             url = ids[0] if isinstance(ids, list) else ids
             url = unquote(str(url or ""))
-            if self._is_folder_id(url):
-                name = self._folder_keyword(url)
-                vod = {
-                    "vod_id": url,
-                    "vod_name": name,
-                    "type_name": "文件夹",
-                    "vod_play_from": "目录",
-                    "vod_play_url": f"打开${url}",
-                    "vod_content": name,
-                    "vod_tag": "folder"
-                }
-                return {"list": [vod]}
             vod["vod_id"] = url
             vod["vod_name"] = "在线播放"
             vod["type_name"] = "福利"
@@ -315,12 +290,6 @@ class Spider(Spider):
 
     def playerContent(self, flag, id, vipFlags):
         play_id = unquote(str(id or ""))
-        if self._is_folder_id(play_id):
-            return {
-                "parse": 1,
-                "url": play_id,
-                "header": {}
-            }
         play_url = play_id
         try:
             resp = requests.get(play_id, headers=self.getHeader(), timeout=10)
