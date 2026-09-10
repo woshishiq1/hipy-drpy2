@@ -46,7 +46,9 @@ class Spider(Spider):
         uid=pp[1] if len(pp)>1 else ''
         name=unquote(pp[2]) if len(pp)>2 else '推特APP'
         data=self._api('/api/video/can/watch?videoId=%s'%vid)
-        url=data.get('playPath','') or data.get('url','') or data.get('playUrl','')
+        auth=data.get('authKey','')
+        path=data.get('videoUrl','') or data.get('playPath','') or data.get('url','') or data.get('playUrl','')
+        url='auth_key=%s&path=%s'%(auth,path) if auth and path else path
         director=name if click or not uid else '[a=cr:'+json.dumps({'id':uid+'click','name':name},ensure_ascii=False)+'/]'+name+'[/a]'
         vod={'vod_id':raw,'vod_name':name,'vod_pic':'','vod_director':director,'vod_content':name,'vod_play_from':'推特','vod_play_url':name+'$'+url}
         return {'list':[vod]}
@@ -54,7 +56,9 @@ class Spider(Spider):
         data=self._api('/api/search/keyWord?pageSize=20&page=%s&searchWord=%s&searchType=1'%(pg,quote(key)))
         return {'list':self._items(data.get('videoList',[]),False),'page':int(pg),'pagecount':9999,'limit':20,'total':999999}
     def playerContent(self,flag,id,vipFlags):
-        return {'parse':0,'playUrl':'','url':id,'header':self._headers()}
+        h=self._headers()
+        url=self.host+'/api/m3u8/decode/authPath?'+id if self.host and id.startswith('auth_key=') else id
+        return {'parse':0,'playUrl':'','url':url,'header':h}
     def localProxy(self,param):
         tp,u=self._proxy_param(param)
         if not u: return [404,'text/plain','']

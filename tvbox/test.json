@@ -7,6 +7,18 @@
    "api": "./py/wxty.py"
   },
   {
+   "key": "py_dandanqi",
+   "name": "蛋奇[py]",
+   "type": 3,
+   "api": "./py/dandanqi.py",
+   "searchable": 1,
+   "quickSearch": 1,
+   "filterable": 1,
+   "ext": {
+    "host": "https://www.dandanqi.com"
+   }
+  },
+  {
    "key": "youtube",
    "name": "YouTube",
    "type": 3,

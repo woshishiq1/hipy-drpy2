@@ -89,7 +89,7 @@
 			"timeout":60,
 			"playerType": 2,
 			"ext":{
-				"token":"./lib/token.json",
+				"token":"./lib/tokenm.json",
 				"type":"演唱会#电影#电视剧#帕梅拉#广场舞#纪录片#综艺#鬼畜#音乐#舞蹈#影视#知识#美食#风光#田园#户外#8K#徐云",
 				"cookie":""
 			},
@@ -132,7 +132,7 @@
 		},
 		{ "key": "盘链", "name": "盘链|网盘", "type": 3, "api": "csp_PingLian", "searchable": 1, "timeout":60, "ext": "./lib/tokenm.json$$$https://pinglian.lol$$$$$$0$$$$$$PANLIAN$$$USER$$$PASS" },
 		{"key":"csp_Qwmp4","name":"七味|网盘|磁力","type":3,"api":"csp_Qwmp4","searchable":1,"quickSearch":1,"filterable":0, "timeout":60, "ext":"./lib/tokenm.json$$$https://www.qwmp4.com/$$$noproxy$$$0$$$$$QIWEI"},
-		{"key":"zmi","name":"蜗牛|网盘","type":3,"api":"csp_Zmi","searchable":1,"quickSearch":1,"filterable":1,"timeout":60, "ext":"./lib/tokenm.json$$$https://zmi.kdns.fr/$$$noproxy$$$1$$$$$$WONIU$$$USER$$$PASS$$$./lib/woniu.txt"},
+		{"key":"zmi","name":"蜗牛|网盘","type":3,"api":"csp_Zmi","searchable":1,"quickSearch":1,"filterable":1,"timeout":60, "ext":"./lib/tokenm.json$$$https://www.wn4k.com/$$$noproxy$$$1$$$$$$WONIU$$$USER$$$PASS$$$./lib/woniu.txt"},
 		{"key":"Mogg","name":"木偶哥哥|网盘","type":3,"api":"csp_Mogg","quickSearch":1, "changeable":1, "filterable":1, "timeout":60, "ext":"./lib/tokenm.json$$$http://123.666291.xyz/$$$noproxy$$$1$$$./lib/wogg.json$$$MOGG"},
 		{"key":"PanSouGo","name":"PanSouGo|网盘","type":3,"api":"csp_PanSouGo","quickSearch":1, "changeable":1, "filterable":1, "timeout":60, "ext":
 			{
@@ -166,7 +166,7 @@
 				"cache_file": "/storage/emulated/0/TV/gy_tmdb_pic_cache.json"
 			}
 		},
-		{"key":"HuamuCangShare","name":"花木藏|网盘","type":3,"api":"csp_HuamuCangShare","quickSearch":1, "changeable":1, "filterable":1, "timeout":60, "ext":"./lib/token.json$$$https://share.huamucang.top/$$$noproxy$$$1$$$./lib/huamucang.txt$$$HUAMUCANG$$$USER$$$PASS"},
+		{"key":"HuamuCangShare","name":"聚影|网盘|磁力","type":3,"api":"csp_HuamuCangShare","quickSearch":1, "changeable":1, "filterable":1, "timeout":60, "ext":"./lib/tokenm.json$$$https://jying.top/$$$noproxy$$$1$$$./lib/huamucang.txt$$$HUAMUCANG$$$USER$$$PASS"},
 		{"key":"Guanying","name":"观影|网盘|磁力","type":3,"api":"csp_Guanying","quickSearch":1, "changeable":1, "filterable":1, "timeout":60, "ext":"./lib/tokenm.json$$$https://www.xn--74qz10cqsltibh40akss.com/$$$proxy$$$1$$$./lib/guanying.txt$$$GUANYING$$$username$$$password"},
 		{"key":"FourKZN","name":"4K指南|网盘|磁力","type":3,"api":"csp_FourKZN","quickSearch":1, "changeable":1, "filterable":1, "timeout":60, "ext":"./lib/tokenm.json$$$https://4kzn.cc/$$$noproxy$$$1$$$./lib/4kzn.txt$$$4KZN"},
 		{"key":"校长影视","name":"校长影视|网盘","type":3,"api":"csp_XiaoZhang", "quickSearch":1, "changeable":1, "filterable":1, "timeout":60,"ext":"./lib/tokenm.json$$$https://xzyshd.com$$$proxy$$$1"},
@@ -183,7 +183,7 @@
 			"timeout": 60,
 			"ext": "./lib/tokenm.json$$$https://mihdr.top/$$$noproxy$$$1$$$./lib/wogg.json$$$ZHIZHEN"
 		},
-		{"key":"LIBVIO","name":"LIBVIO|网盘","type":3,"api":"csp_Libvio","quickSearch":1, "changeable":1, "filterable":1, "timeout":60, "ext":"./lib/tokenm.json$$$https://www.libvio.io/$$$noproxy$$$1"},
+		{"key":"LIBVIO","name":"LIBVIO|网盘","type":3,"api":"csp_Libvio","quickSearch":1, "changeable":1, "filterable":1, "timeout":60, "ext":"./lib/tokenm.json$$$https://www.libvio.to/$$$noproxy$$$1"},
 		{"key":"Moli","name":"HDmoli|网盘","type":3,"api":"csp_Moli","quickSearch":1, "changeable":1, "filterable":1, "timeout":60, "ext":"./lib/tokenm.json$$$https://www.hdmoli.com/$$$noproxy$$$1$$$./lib/moli.json"},
 		{"key":"Guazi","name":"瓜子|App","type":3,"api":"csp_Guazi","quickSearch":1, "changeable":1, "filterable":1, "timeout":60, "ext":""},
 		{"key":"美剧迷","name":"美剧迷|网盘","type":3,"api":"csp_Meijumi", "quickSearch":1, "changeable":1, "filterable":1, "timeout":120,"ext":"./lib/tokenm.json$$$https://www.meijumi.net/$$$proxy$$$1"},
@@ -814,12 +814,6 @@
 				"ua": "okhttp/3.15",
 				"epg": "http://127.0.0.1:10079/p/0/proxy/http://epg.112114.xyz/?ch={name}&date={date}",
 				"logo": "http://127.0.0.1:10079/p/0/proxy/https://cdn.jsdmirror.com/gh/fanmingming/live@master/tv/{name}.png"
-			},
-			{
-				"name": "YTLive",
-				"type": 0,
-				
-				"url": "./lib/yo21.txt"
 			},
 			{
 				"group":"redirect",

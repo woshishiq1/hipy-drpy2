@@ -25,7 +25,16 @@ class Spider(Spider):
             'https://api.w32z7vtd.com',
             'https://api.6a7nnf7.com',
             'https://api.umygrx3.com',
-            'https://api.rmedphk.com'
+            'https://api.rmedphk.com',
+            'https://apinew.qksov.com',
+            'https://apinew.qwepe.com',
+            'https://gzapi.45366fut.com',
+            'https://gzapi.n55zw7th.com',
+            'https://gzapi.tt9butrf.com',
+            'https://gzapi.unggfd5u.com',
+            'https://api.27yyukw.com',
+            'https://api.2xvd33x.com',
+            'https://api.wsz9yan.com'
         ]
         self.host_index = 0
         self.host = self.hosts[self.host_index]
@@ -78,9 +87,8 @@ t5lYKfpe8k83ZA==
 
         self.cache = {}
         self.cache_timeout = 300
-
-        # 初始化token
-        self.init_token()
+        self._authed = False
+        # token 懒加载: 不在构造内联网, 首次业务请求时 ensure_token() 自动注册
 
     def getName(self):
         return self.name
@@ -88,9 +96,12 @@ t5lYKfpe8k83ZA==
     def init(self, extend=''):
         pass
 
+    def destroy(self):
+        pass
+
     # ---------- 设备注册与认证 ----------
     def init_token(self):
-        """初始化token：注册设备 -> 刷新"""
+        """初始化token：注册设备 -> 刷新(已废弃，保留兼容；新逻辑走 ensure_token 懒加载)"""
         print("===== 初始化设备认证 =====")
         try:
             if not self.registered:
@@ -98,9 +109,8 @@ t5lYKfpe8k83ZA==
             # 刷新获取最终token
             self.refresh_token()
         except Exception as e:
+            # 不再写入硬编码兜底 token，避免用过期 token 掩盖 502 真因
             print(f"初始化token失败: {e}")
-            # 兜底使用原有硬编码（几乎没用）
-            self.token = '024212ef0975c5306a1434e113a46463.bc77313e11a248558a6ca244ca980944ec3421fa480c50e0229ad91f1cb15aea582603202cd71796885c9e5163e500f1b72f737059aff1ddb8beea47c5a331d6760540345b7f88b2302a0e6e09589f9dcf3ff9175d8c905f990203f5fc04748008ea7a366571cbf5b09509a873dcfba3cf1d5590385f5f7ef6e01d1850974aa220eb5178c89e61c24411af9b9a19435e.06fde789ece48d9b33c5dc857e04e9b5838f08264d928b87237d3476c4484b46'
 
     def sign_up(self):
         """注册设备"""
@@ -112,6 +122,8 @@ t5lYKfpe8k83ZA==
             "code": ""
         }
         result = self._auth_request('/App/Authentication/Device/signUp', params)
+        if not result:
+            raise Exception("注册设备无响应(服务端502/网络不通)")
         self._apply_auth(result)
         self.registered = True
 
@@ -123,10 +135,14 @@ t5lYKfpe8k83ZA==
             "old_key": self.DEVICE_OLD_KEY
         }
         result = self._auth_request('/App/Authentication/Device/signIn', params)
+        if not result:
+            raise Exception("设备登录无响应(服务端502/网络不通)")
         self._apply_auth(result)
 
     def _apply_auth(self, result):
         """从认证响应中提取token"""
+        if not isinstance(result, dict):
+            raise Exception("认证失败，无token返回: {}".format(result))
         new_token = result.get('token', '')
         if not new_token:
             raise Exception("认证失败，无token返回: {}".format(result))
@@ -140,7 +156,10 @@ t5lYKfpe8k83ZA==
         """刷新token"""
         print("刷新token...")
         result = self._auth_request('/App/Authentication/Authenticator/refresh', {})
+        if not result:
+            raise Exception("刷新token无响应(服务端502/网络不通)")
         self._apply_auth(result)
+        self._authed = True
 
     def _auth_request(self, path, params):
         """认证类请求（不需要ensure_token）"""
@@ -148,7 +167,9 @@ t5lYKfpe8k83ZA==
 
     # ---------- 业务请求核心（修复加密与签名） ----------
     def ensure_token(self):
-        """确保token有效，如未就绪则重新获取"""
+        """确保token有效，懒加载：首次业务请求时才联网注册"""
+        if self._authed and self.token and self.token_id:
+            return
         if not self.token or not self.token_id:
             if self.registered:
                 self.sign_in()
@@ -175,6 +196,8 @@ t5lYKfpe8k83ZA==
             # 2. 生成keys (RSA加密 iv/key JSON)
             key_json = json.dumps({"iv": self.AES_IV, "key": self.AES_KEY})
             keys = self.rsa_encrypt(key_json, self.RSA_PUBLIC_KEY)
+            if not keys:
+                raise Exception("RSA加密失败，无法生成keys")
 
             # 3. 生成签名
             t = str(int(time.time()))
@@ -200,12 +223,17 @@ t5lYKfpe8k83ZA==
             response = self.post(url, headers=self.header, data=body, timeout=10)
 
             if response.status_code != 200:
-                raise Exception(f"HTTP {response.status_code}")
+                # 502 网关HTML会走到这里，避免 response.json() 抛错掩盖状态码
+                raise Exception(f"HTTP {response.status_code} body={response.text[:200]!r}")
 
-            resp_json = response.json()
+            try:
+                resp_json = response.json()
+            except Exception as je:
+                raise Exception(f"响应非JSON(疑似502网关页): {response.text[:200]!r} err={je}")
+
             # 检查业务code（若不为200可能token过期）
             if 'code' in resp_json and resp_json['code'] != 200:
-                print(f"业务错误码: {resp_json['code']}, 信息: {resp_json}")
+                print(f"业务错误码: {resp_json['code']}, 信息: {str(resp_json)[:500]}")
                 # 如果不是认证请求，尝试重新获取token后重试一次（这里简单处理，外层get_data已有重试）
                 raise Exception("业务错误")
 
@@ -215,13 +243,24 @@ t5lYKfpe8k83ZA==
 
             encrypted_response = data_section.get('response_key', '')
             encrypted_keys = data_section.get('keys', '')
+            if not encrypted_response or not encrypted_keys:
+                raise Exception("响应缺少response_key/keys字段")
 
             # 6. 解密响应
             decrypted_keys_json = self.rsa_decrypt(encrypted_keys, self.RSA_PRIVATE_KEY)
-            key_info = json.loads(decrypted_keys_json)
-            resp_key = key_info['key']
-            resp_iv = key_info['iv']
+            if not decrypted_keys_json:
+                raise Exception("响应keys解密失败(内置私钥与服务端公钥不匹配)")
+            try:
+                key_info = json.loads(decrypted_keys_json)
+            except Exception as je:
+                raise Exception(f"keys JSON解析失败: {decrypted_keys_json[:200]!r} err={je}")
+            resp_key = key_info.get('key', '')
+            resp_iv = key_info.get('iv', '')
+            if not resp_key or not resp_iv:
+                raise Exception(f"keys缺少key/iv: {key_info}")
             decrypted_data = self.aes_decrypt(encrypted_response, resp_key, resp_iv)
+            if not decrypted_data:
+                raise Exception("响应体AES解密失败")
             return json.loads(decrypted_data)
 
         except Exception as e:
@@ -229,7 +268,9 @@ t5lYKfpe8k83ZA==
             return None
 
     def get_data(self, data, path, use_cache=True):
-        """带重试和域名轮询的数据获取（保持原框架）"""
+        """带重试和域名轮询的数据获取（保持原框架）。
+        注意：认证类路径(signUp/signIn/refresh)由 _auth_request 直调 _send_encrypted_request，
+        不走本方法，因此这里不再触发 ensure_token，避免 signUp 失败时无限递归。"""
         try:
             cache_key = f"{path}_{hash(str(data))}" if use_cache else None
             if use_cache and cache_key in self.cache:
@@ -304,13 +345,19 @@ t5lYKfpe8k83ZA==
             return ""
 
     def rsa_decrypt(self, encrypted_data, private_key_str):
-        """RSA私钥解密"""
+        """RSA私钥解密(服务端keys字段返回的响应密钥)。
+        注意：内置 RSA_PRIVATE_KEY 与 RSA_PUBLIC_KEY 并非同一对(经 openssl/pycryptodome 双重验证)，
+        故服务端用公钥加密的 keys 无法用内置私钥解出 —— 这是服务端502之外的第二处致命伤。
+        此处如解密失败返回空串，由调用方判空后抛错，避免 json.loads('') 掩盖根因。"""
         try:
             encrypted_bytes = base64.b64decode(encrypted_data)
             rsa_key = RSA.import_key(private_key_str)
             cipher = PKCS1_v1_5.new(rsa_key)
             decrypted = cipher.decrypt(encrypted_bytes, None)
-            return decrypted.decode('utf-8') if decrypted else ""
+            if not decrypted:
+                print("RSA解密失败: 私钥与服务端公钥不匹配(内置密钥对不一致)")
+                return ""
+            return decrypted.decode('utf-8')
         except Exception as e:
             print(f"RSA解密失败: {e}")
             return ""
@@ -362,6 +409,7 @@ t5lYKfpe8k83ZA==
     def categoryContent(self, tid, pg, filter, extend):
         videos = []
         try:
+            extend = extend or {}
             body = {
                 "area": extend.get('area', '0'),
                 "year": extend.get('year', '0'),
@@ -389,6 +437,8 @@ t5lYKfpe8k83ZA==
 
     def detailContent(self, ids):
         try:
+            if not ids:
+                return {'list': []}
             vod_id = ids[0].split('/')[0]
             t = str(int(time.time()))
             body1 = {"token_id": self.token_id, "vod_id": vod_id, "mobile_time": t, "token": self.token}
@@ -465,7 +515,7 @@ t5lYKfpe8k83ZA==
                 data = self.get_data(params, '/App/Resource/VurlDetail/showOne', use_cache=False)
                 if data and 'url' in data:
                     return {"parse": 0, "playUrl": "", "url": data['url'],
-                            "header": json.dumps({"User-Agent": "Lavf/57.83.100", "Referer": "http://WJiZxLXA2.com/"}), 'danmaku': 'http://127.0.0.1:9978/proxy?do=diydanmu'}
+                            "header": {"User-Agent": "Lavf/57.83.100", "Referer": "http://WJiZxLXA2.com/"}, 'danmaku': 'http://127.0.0.1:9978/proxy?do=diydanmu'}
             return {"parse": 0, "playUrl": "", "url": ""}
         except Exception as e:
             print(f"播放解析失败: {e}")

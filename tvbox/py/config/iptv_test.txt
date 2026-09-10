@@ -1286,6 +1286,8 @@ NewTV欢乐剧场,
 NewTV明星大片,
 NewTV怡伴健康,
 NewTV中国功夫,
+弈坛春秋,
+纯享4K,
 
 求索系列,#genre#
 求索记录,
@@ -6411,6 +6413,7 @@ HZTV-2,
 广州竞赛,
 东莞新闻综合,
 东莞生活资讯,
+河源综合,
 
 上海,#genre#
 上海新闻,
@@ -6423,9 +6426,11 @@ HZTV-2,
 上海ICS外语,
 上海东方有线,
 上海都市频道,
+五星体育,
 
 重庆,#genre#
 重庆汽摩,
+万州三峡移民,
 
 北京,#genre#
 优优宝贝,
@@ -6486,6 +6491,7 @@ HZTV-2,
 
 YouTube,#genre#
 三立INEWS,
+大爱,
 
 安徽,#genre#
 滁州新闻综合频道|滁州新闻综合,
@@ -6669,6 +6675,8 @@ beIN Sports 2,
 HTV Thể thao,
 MLB Channel,
 beIN Sports USA,
+NBA,
+Fox Sports,
 
 少儿,#genre#
 央视少儿,
@@ -6996,6 +7004,7 @@ CDTV,
 GS TV,
 HNN 24x7,
 India News Madhya Pradesh/Chhattisgarh,
+News Malayalam 24x7,
 
 财经,#genre#
 央视财经,
@@ -7053,6 +7062,7 @@ QVC UK Beauty,
 QVC UK Extra,
 QVC UK Style,
 TVSN Beauty,
+家有购物,
 
 国际,#genre#
 HBO HD,
@@ -7261,3 +7271,35 @@ ABC Australia,
 Antena International (720P),
 Antena Monden,
 ITV1,
+Food Network,
+CNNi,
+Filmgold,
+FilmRise DeGrassi la nouvelle génération,
+FilmRise Hot Ones,
+FilmRise Les Routes du Paradis,
+FilmRise Séries France,
+FilmRise Z Nation France,
+MotoGP Channel,
+PBS Digital Studios,
+PBS Food,
+PBS Genealogy,
+PBS Science,
+Rainy Day Vibes,
+RTHK TV 36 (港台電視36),
+Sony One Competencias,
+Sony One Shark Tank Brasil,
+Sony One Shark Tank México,
+黑龙卫视,
+
+福建,#genre#
+漳州新闻综合,
+
+河北,#genre#
+鹿泉一套,
+鹿泉二套,
+
+甘肃,#genre#
+甘肃公共,
+
+四川,#genre#
+四川新闻,

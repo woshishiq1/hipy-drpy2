@@ -3,8 +3,7 @@
 
 """
 
-作者 精彩一瞬间 内容均从互联网收集而来 仅供交流学习使用 严禁用于商业用途 请于24小时内删除
-         ====================Diudiumiao====================
+内容均从互联网收集而来 仅供交流学习使用 严禁用于商业用途 请于24小时内删除
 
 """
 
@@ -17,7 +16,6 @@ from urllib.parse import quote
 from base.spider import Spider
 from Crypto.Cipher import AES
 from datetime import datetime
-from bs4 import BeautifulSoup
 from base64 import b64decode
 import concurrent.futures
 import urllib.request
@@ -397,8 +395,9 @@ class Spider(Spider):
         remarks = self.extract_detail_field(data, 'episodeDesc')
         year = self.extract_detail_field(data, 'pubTime')
         area = self.extract_detail_field(data, 'countryTag')
+        title = self.extract_detail_field(data, 'title') or (data.get('data', {}).get('newsTitle') or '')
         bofang = self.build_play_url(data)
-        videos = [self.build_video_data(did, director, actor, remarks, year, area, content, bofang)]
+        videos = [self.build_video_data(did, title, director, actor, remarks, year, area, content, bofang)]
         return self.build_result(videos)
 
     def build_detail_params(self, fenge):
@@ -426,8 +425,8 @@ class Spider(Spider):
             bofang += name + '$' + id + '#'
         return bofang[:-1]
 
-    def build_video_data(self, did, director, actor, remarks, year, area, content, bofang):
-        return {"vod_id": did, "vod_director": director, "vod_actor": actor, "vod_remarks": remarks, "vod_year": year, "vod_area": area, "vod_content": content, "vod_play_from": "华数专线", "vod_play_url": bofang}
+    def build_video_data(self, did, title, director, actor, remarks, year, area, content, bofang):
+        return {"vod_id": did, "vod_name": title, "vod_director": director, "vod_actor": actor, "vod_remarks": remarks, "vod_year": year, "vod_area": area, "vod_content": content, "vod_play_from": "华数专线", "vod_play_url": bofang}
 
     def build_result(self, videos):
         result = {}

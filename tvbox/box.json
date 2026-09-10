@@ -54,6 +54,25 @@
    "filterable": 1
   },
   {
+   "key": "py_hongguo",
+   "name": "红果[py]",
+   "type": 3,
+   "api": "./py/hongguo.py",
+   "searchable": 1,
+   "quickSearch": 1,
+   "filterable": 1
+  },
+  {
+   "key": "py_guazi",
+   "name": "瓜子[py]",
+   "type": 3,
+   "api": "./py/guazi.py",
+   "searchable": 1,
+   "quickSearch": 1,
+   "filterable": 1,
+   "ext": {}
+  },
+  {
    "key": "py_libvio",
    "name": "LIBVIO[py]",
    "type": 3,
@@ -129,16 +148,6 @@
     "host": "https://v.xl.in.ua",
     "pageFmt": ""
    }
-  },
-  {
-   "key": "py_guazi",
-   "name": "瓜子影视[py]",
-   "type": 3,
-   "api": "./py/guazi.py",
-   "searchable": 1,
-   "quickSearch": 1,
-   "filterable": 1,
-   "ext": {}
   },
   {
    "key": "py_shanzha",
