@@ -430,16 +430,16 @@
             }
         },
         {
-            "key": "世界听书",
-            "name": "🎵世界听书",
+            "key": "ytb",
+            "name": "🎵悦听吧",
             "type": 3,
-            "api": "csp_TingShijie",
-            "searchable": 1,
-            "quickSearch": 0,
-            "changeable": 0,
-            "style": {
-                "type": "list"
-            }
+            "api": "./py/悦听吧.py"
+        },
+		{
+            "key": "易听书网",
+            "name": "🎵易听书网",
+            "type": 3,
+            "api": "./py/易听书网🍀TG @hshsjk9.py"
         },
 		{
             "key": "堇夏听书",
@@ -477,18 +477,6 @@
             "name": "🎵呦呦DJ",
             "type": 3,
             "api": "csp_Djuu",
-            "searchable": 1,
-            "quickSearch": 0,
-            "changeable": 0,
-            "style": {
-                "type": "list"
-            }
-        },
-        {
-            "key": "轮回DJ",
-            "name": "🎵轮回DJ",
-            "type": 3,
-            "api": "csp_Djlh",
             "searchable": 1,
             "quickSearch": 0,
             "changeable": 0,
@@ -1436,6 +1424,12 @@
             "name": "🕊️青鸟影视",
             "type": 3,
             "api": "./py/青鸟影视.py"
+        },
+		{
+            "key": "飞流视频1",
+            "name": "🦅飞流视频1",
+            "type": 3,
+            "api": "./py/飞流视频🍀TG @hshsjk9.py"
         },
 		{
             "key": "爬虫影视",
@@ -35670,10 +35664,53 @@
             "ext": "./js/去看吧.js"
         },
         {
-            "key": "T4-xingzhige",
-            "name": "🍊影视短剧",
-            "type": 4,
-            "api": "https://catbox.n13.club/t9/xingzhige.php"
+            "key": "红果短剧",
+            "name": "🍎红果短剧",
+            "type": 3,
+            "api": "./py/红果短剧.py"
+        },
+		{
+            "key": "短剧巴士",
+            "name": "🚐短剧巴士",
+            "type": 3,
+            "api": "./py/短剧巴士.py"
+        },
+		{
+            "key": "cj_360资源",
+            "name": "🛡️360短剧",
+            "type": 1,
+            "searchable": 0,
+            "quickSearch": 1,
+            "filterable": 1,
+            "api": "https://360zy.com/api.php/provide/vod",
+            "categories": [
+                "爽文短剧",
+                "现代都市",
+                "脑洞悬疑",
+                "年代穿越",
+                "古装仙侠",
+                "反转爽剧",
+                "女频恋爱",
+                "成长逆袭"
+            ]
+        },
+		{
+            "key": "喜福网",
+            "name": "🍫喜福短剧",
+            "type": 3,
+            "api": "./py/喜福短剧.py"
+        },
+		{
+            "key": "hmjc",
+            "name": "🦛河马剧场",
+            "type": 3,
+            "api": "./py/河马剧场.py"
+        },
+		{
+            "key": "石榴短剧",
+            "name": "🍊石榴短剧",
+            "type": 3,
+            "api": "./py/石榴短剧.py"
         },
         {
             "key": "剧和短剧",

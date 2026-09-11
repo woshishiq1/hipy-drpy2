@@ -52,9 +52,6 @@ class Spider(_B):
             self.domains.extend(BACKUP_DOMAINS)
             self.domains = list(set(self.domains))  # 去重
         self._register()
-        self.page_cache = {}
-        self.page_index = {}
-        self.page_keys = []
 
     def getName(self):
         return "萝莉岛"
@@ -168,6 +165,27 @@ class Spider(_B):
         except Exception as e:
             print(f'[CACHE] Save failed: {e}')
 
+    def _fallback_cache(self):
+        """降级使用缓存（即使过期）- 不过滤黑名单"""
+        cache_path = self._get_cache_path()
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    cache_data = json.load(f)
+                    domains = cache_data.get('domains', [])
+                    # 不过滤黑名单，直接使用
+                    self.domains = [d for d in domains if d and isinstance(d, str) and '.' in d]
+                    if self.domains:
+                        print(f'[DOMAIN] Using fallback cache with {len(self.domains)} domains')
+                        return
+            except Exception as e:
+                print(f'[DOMAIN] Fallback cache failed: {e}')
+        
+        # 如果还是没有域名，使用备用域名
+        if not self.domains:
+            self.domains = BACKUP_DOMAINS.copy()
+            print('[DOMAIN] Using backup domains')
+
     def _find_working_domain(self):
         """找到一个可工作的域名"""
         # 先尝试之前找到的工作域名
@@ -253,49 +271,6 @@ class Spider(_B):
         except Exception as e:
             print('[REGISTER]', e)
 
-    def _t(self, s):
-        return str(s or "").replace("$", " ").replace("#", " ").strip()
-
-    def _cache_page(self, key, items):
-        videos = [it for it in (items or []) if isinstance(it, dict) and it.get("vod_id")]
-        self.page_cache[key] = videos
-        if key in self.page_keys:
-            self.page_keys.remove(key)
-        self.page_keys.append(key)
-        while len(self.page_keys) > 30:
-            old = self.page_keys.pop(0)
-            for it in self.page_cache.pop(old, []):
-                vid = str(it.get("vod_id") or "")
-                if self.page_index.get(vid) == old:
-                    self.page_index.pop(vid, None)
-        for it in videos:
-            self.page_index[str(it["vod_id"])] = key
-
-    def _build_page_play(self, vid, film, play_from, play_url):
-        vid, film = str(vid), self._t(film) or str(vid)
-        froms = [x for x in str(play_from or "").split("$$$") if x] or ["萝莉岛"]
-        groups = str(play_url or "").split("$$$")
-        key = self.page_index.get(vid)
-        items = list(self.page_cache.get(key, [])) if key else []
-        tails, seen = [], {vid}
-        for it in items:
-            oid = str(it.get("vod_id") or "")
-            if oid and oid not in seen:
-                seen.add(oid)
-                tails.append("%s$nid:%s" % (self._t(it.get("vod_name")) or oid, urllib.parse.quote(oid, safe="")))
-        tail = ("#" + "#".join(tails)) if tails else ""
-        out = []
-        for i, _n in enumerate(froms):
-            raw = str(groups[i] if i < len(groups) else (groups[0] if groups else "") or "").strip()
-            if not raw:
-                first = film + "$"
-            elif "$" in raw:
-                first = raw
-            else:
-                first = "%s$%s" % (film, raw)
-            out.append(first + tail)
-        return "$$$".join(froms), "$$$".join(out)
-
     def homeContent(self, filter=False):
         """获取主分类及其对应的筛选条件"""
         try:
@@ -319,7 +294,7 @@ class Spider(_B):
                             tag_values.append({"n": tag.get("name"), "v": tag.get("name")})
                         filters[tid] = [{"key": "class", "name": "标签", "value": tag_values}]
                 
-                return {"class": classes, "filters": filters}
+                return {"class": classes, "filters": filters if filter else {}}
             
             return {"class": [], "filters": {}}
         except Exception as e:
@@ -355,9 +330,7 @@ class Spider(_B):
                         "vod_pic": item.get("vod_pic", ""),
                         "vod_remarks": item.get("vod_class", "") or item.get("vod_remarks", "")
                     })
-                result = {"list": videos, "page": pg}
-                self._cache_page(("cate", str(tid), str(pg), str(extend)), result.get("list"))
-                return result
+                return {"list": videos, "page": pg}
         except Exception as e:
             print('[CATEGORY]', e)
         
@@ -379,17 +352,14 @@ class Spider(_B):
                 play_url = data.get("vod_play_url", "")
                 if not play_url:
                     play_url = "预览$" + data.get("preview_url", "")
-                play_from = data.get("vod_play_from") or "萝莉岛"
-                vid = str(data.get("vod_id", ids[0]))
-                play_from, play_url = self._build_page_play(vid, data.get("vod_name", ""), play_from, play_url)
 
                 video = {
-                    "vod_id": vid,
+                    "vod_id": str(data.get("vod_id", ids[0])),
                     "vod_name": data.get("vod_name", ""),
                     "vod_pic": data.get("vod_pic", ""),
                     "vod_remarks": data.get("vod_remarks", ""),
                     "vod_content": data.get("vod_blurb", "暂无简介"),
-                    "vod_play_from": play_from,
+                    "vod_play_from": "萝莉岛",
                     "vod_play_url": play_url
                 }
                 return {"list": [video]}
@@ -400,38 +370,11 @@ class Spider(_B):
 
     def playerContent(self, flag, id, vipFlags=None):
         """播放器直连"""
-        raw = str(id or "")
-        if raw.startswith("nid:"):
-            vid = urllib.parse.unquote(raw[4:])
-            url = self._nid_url(vid, flag)
-            return {
-                "parse": 0,
-                "url": url,
-                "header": json.dumps({"User-Agent": U})
-            }
         return {
             "parse": 0,
-            "url": raw,
+            "url": id,
             "header": json.dumps({"User-Agent": U})
         }
-
-    def _nid_url(self, vid, flag):
-        try:
-            r = self._request_api('/api/Get_vod_list.php', 'post', data={"id": str(vid), "token": self.token, "channel": ""})
-            if not r:
-                return ""
-            data = r.json().get("data", {}) or {}
-            play_url = data.get("vod_play_url") or data.get("preview_url") or ""
-            froms = [x for x in str(data.get("vod_play_from") or "萝莉岛").split("$$$") if x]
-            groups = str(play_url).split("$$$")
-            idx = froms.index(flag) if flag in froms else 0
-            raw = groups[idx] if idx < len(groups) else (groups[0] if groups else play_url)
-            if "$" in raw:
-                return raw.split("#")[0].split("$", 1)[-1]
-            return raw
-        except Exception as e:
-            print('[PLAY]', e)
-            return ""
 
     def searchContent(self, key, quick=False, pg=1):
         """搜索功能"""

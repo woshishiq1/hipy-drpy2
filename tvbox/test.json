@@ -15,8 +15,17 @@
    "quickSearch": 1,
    "filterable": 1,
    "ext": {
-    "host": "https://www.dandanqi.com"
+    "host": "https://www.dandanqi.cc"
    }
+  },
+  {
+   "key": "py_hongguo",
+   "name": "红果[py]",
+   "type": 3,
+   "api": "./py/hongguo_fixed.py",
+   "searchable": 1,
+   "quickSearch": 1,
+   "filterable": 1
   },
   {
    "key": "youtube",

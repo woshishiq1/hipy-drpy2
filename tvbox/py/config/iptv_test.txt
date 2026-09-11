@@ -3526,6 +3526,7 @@ Nash Bridges Channel,
 FilmBox,
 J Movie,
 MoreMax,
+Zee Cafe HD,
 
 电视剧🔁,#genre#
 科幻动作,
@@ -6846,6 +6847,7 @@ Rock of Manila TV,
 B4U Hitz,
 KPVM Ace Country Radio,
 Страна FM,
+Ultra TV 4K,
 
 新闻,#genre#
 TVBS新闻,
@@ -7290,6 +7292,8 @@ Sony One Competencias,
 Sony One Shark Tank Brasil,
 Sony One Shark Tank México,
 黑龙卫视,
+TV Escola,
+TVE Cultura,
 
 福建,#genre#
 漳州新闻综合,

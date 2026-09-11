@@ -50,6 +50,21 @@
    }
   },
   {
+   "key": "csp_Dybjt",
+   "name": "动态背景t",
+   "type": 3,
+   "api": "csp_ProxySpider",
+   "searchable": 0,
+   "quickSearch": 0,
+   "filterable": 0,
+   "ext": {
+    "class": "Dybjt",
+    "title_scale": 1.0,
+    "font_scale": 1.0,
+    "tmdb_key": "d7040155454e7fdf547c4d889ebbcca7"
+   }
+  },
+  {
    "key": "运行",
    "name": "运行模块",
    "type": 3,
