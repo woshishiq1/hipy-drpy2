@@ -3527,6 +3527,13 @@ FilmBox,
 J Movie,
 MoreMax,
 Zee Cafe HD,
+MNX HD,
+Movies Now +,
+Movies Now HD,
+Sony Max 1,
+Star Gold Select HD,
+Zee Bollymovies,
+Zee Bollywood,
 
 电视剧🔁,#genre#
 科幻动作,
@@ -6678,6 +6685,7 @@ MLB Channel,
 beIN Sports USA,
 NBA,
 Fox Sports,
+Star Sports Select 1 HD,
 
 少儿,#genre#
 央视少儿,
@@ -7294,6 +7302,7 @@ Sony One Shark Tank México,
 黑龙卫视,
 TV Escola,
 TVE Cultura,
+FXX,
 
 福建,#genre#
 漳州新闻综合,

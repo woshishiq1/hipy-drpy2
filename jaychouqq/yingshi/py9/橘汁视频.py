@@ -27,7 +27,7 @@ PW_SAFE = b'11GK2we32144LO&hilUITB)FMd1khdaF'
 CERT_MD5 = '090DA8F91D3F60CC6CB250D86F06FE12'
 CERT_SHA1 = '3DADB42485B7F864E766479ADA6B1176D81D8D73'
 PKG = 'com.mxj.wylcjbxyx'
-VC = '3023'
+VC = '3024'
 HOST = 'https://juziapp.hzhcbkj.cn'
 UA = 'okhttp/3.12.1'
 
@@ -136,8 +136,8 @@ class Spider(_Base):
         sign = base64.b64encode(self._rsa1.encrypt((str(ts) + rnd).encode())).decode()
         body = (_f(1, 0, _varint(ts)) + _f(2, 2, sign.encode()) +
                 _f(3, 2, rnd.encode()) + _f(4, 2, rnd.encode()) + _f(5, 2, rnd.encode()))
-        P = {'plat': 'android', 'vOs': '16', '_vOsCode': '36', 'vApp': '3023',
-             'vName': '3.0.2.3', 'pkg': PKG,
+        P = {'plat': 'android', 'vOs': '16', '_vOsCode': '36', 'vApp': VC,
+             'vName': '3.0.2.4', 'pkg': PKG,
              'appName': '%E6%A9%98%E6%B1%81',
              'udid': self.udid, 'uuid': self.udid, 'chid': '10000',
              'androidID': self.udid, 'net': '1', 'young': 0, 'tenantId': '*',
@@ -155,10 +155,10 @@ class Spider(_Base):
     def _hdr(self):
         ts = int(time.time() * 1000)
         rnd = _rnd(16)
-        sig = base64.b64encode(self._rsa2.encrypt((str(ts) + rnd + '3023').encode())).decode()
+        sig = base64.b64encode(self._rsa2.encrypt((str(ts) + rnd + VC).encode())).decode()
         ao = base64.b64encode(AES.new(SAFE, AES.MODE_ECB).encrypt(
             pad((str(ts) + rnd).encode(), 16))).decode()
-        J = {'country': 'CN', 'vName': '3.0.2.3', 'cpuId': '', 'young': 0,
+        J = {'country': 'CN', 'vName': '3.0.2.4', 'cpuId': '', 'young': 0,
              'facturer': 'OnePlus', 'pkg': PKG, 'uuid': self.udid,
              'resolution': '1080x2256', 'mac': '02%3A00%3A00%3A00%3A00%3A00',
              'sig': sig, 'abid': '7470', 'model': 'PJX110', 'plat': 'android',
@@ -167,7 +167,7 @@ class Spider(_Base):
              'density': '3.0', 'appName': '%E6%A9%98%E6%B1%81',
              'cpu': 'arm64-v8a', 'chid': '10000', 'carrier': '%E8%81%94%E9%80%9A',
              'sig2': ao[:8], 'v': 1, 'sig3': ao[8:], 'tenantId': '*',
-             '_vOsCode': '36', 'vOs': '16', 'vApp': '3023', 'device': 0,
+             '_vOsCode': '36', 'vOs': '16', 'vApp': VC, 'device': 0,
              'androidID': self.udid}
         blob = json.dumps(J, separators=(',', ':'), ensure_ascii=False).encode()
         pd_hex = AES.new(NATIVE_K, AES.MODE_CBC, NATIVE_K).encrypt(pad(blob, 16)).hex()
