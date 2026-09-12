@@ -1,0 +1,10 @@
+本地包使用说明
+
+将 feimao.zip 解压到手机「Download」目录，得到 Download/feimao/
+
+本地包使用接口地址
+
+类型    说明        示例
+远程    HTTP/HTTPS 直链    https://xxx.com/feimao/fm.json
+本地    file 协议         file://Download/feimao/fm.json
+clan    局域网            clan://localhost/Download/feimao/fm.json

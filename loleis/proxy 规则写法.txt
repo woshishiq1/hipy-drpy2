@@ -1,0 +1,63 @@
+"proxy": [
+        {
+            "name": "TW-4GTV",
+            "hosts": [
+                "hinet.net",
+                "cdn.hinet.net",
+                "4gtv.tv",
+                ".*boku.*",
+                ".*nivod.*",
+                ".*ulivetv.*",
+                "infini.money"
+            ],
+            "urls": [
+                "socks5://127.0.0.1:10174"
+            ]
+        },
+        {
+            "name": "YouTube-Fixed",
+            "hosts": [
+                "youtube.com",
+                "www.youtube.com",
+                "m.youtube.com",
+                "youtu.be",
+                "googlevideo.com",
+                "ytimg.com",
+                "i.ytimg.com",
+                "ggpht.com",
+                "yt3.ggpht.com",
+                "googleapis.com",
+                "youtubei.googleapis.com",
+                "gstatic.com",
+                "nhacmp3youtube.com"
+            ],
+            "urls": [
+                "socks5://127.0.0.1:10172"
+            ]
+        },
+        {
+            "name": "10172",
+            "hosts": [
+                "stream1.freetv.fun",
+                "stream-link.org",
+                "infini.money"
+            ],
+            "urls": [
+                "http://127.0.0.1:10172",
+                "https://127.0.0.1:10172"
+            ]
+        },
+        {
+            "name": "US-10175",
+            "hosts": [
+                "playouts.now.amagi.tv",
+                "rastamusic.streamguys1.com",
+                "tunein.cdnstream1.com",
+                "prd.pluto.tv"
+            ],
+            "urls": [
+                "http://127.0.0.1:10175",
+                "https://127.0.0.1:10175"
+            ]
+        }
+    ],

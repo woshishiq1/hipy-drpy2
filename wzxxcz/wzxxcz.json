@@ -88,6 +88,12 @@
             "url": "https://gh-proxy.org/https://raw.githubusercontent.com/kakaxi-1/IPTV/refs/heads/main/ipv4.txt"
         },
 		{
+            "name": "港澳台",
+            "type": 0,
+            "ua": "okhttp/5.3.2",
+            "url": "https://iptv.852851.xyz/sub/bwQfdMcUYrjq/playlist.m3u"
+        },
+		{
             "name": "台湾4GTV直播",
             "type": 0,
             "ua": "okhttp/5.3.2",

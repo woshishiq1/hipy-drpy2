@@ -1,0 +1,2527 @@
+<!DOCTYPE html><html lang="zh-CN" class="" style="--safe-top: 0px;"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>bilibili</title>
+
+<script>
+(function () {
+  var d = document, root = d.documentElement;
+
+  /* ---- polyfill ---- */
+  if (!Element.prototype.matches) {
+    Element.prototype.matches = Element.prototype.msMatchesSelector || Element.prototype.webkitMatchesSelector;
+  }
+  if (!Element.prototype.closest) {
+    Element.prototype.closest = function (s) {
+      var el = this;
+      while (el && el.nodeType === 1) {
+        if (el.matches(s)) return el;
+        el = el.parentElement || el.parentNode;
+      }
+      return null;
+    };
+  }
+  if (!Element.prototype.replaceChildren) {
+    Element.prototype.replaceChildren = function () {
+      while (this.firstChild) this.removeChild(this.firstChild);
+      for (var i = 0; i < arguments.length; i++) {
+        var n = arguments[i];
+        this.appendChild(typeof n === 'string' ? d.createTextNode(n) : n);
+      }
+    };
+  }
+  if (!Object.values) {
+    Object.values = function (o) {
+      var r = [], k;
+      for (k in o) if (Object.prototype.hasOwnProperty.call(o, k)) r.push(o[k]);
+      return r;
+    };
+  }
+  if (!Object.entries) {
+    Object.entries = function (o) {
+      var r = [], k;
+      for (k in o) if (Object.prototype.hasOwnProperty.call(o, k)) r.push([k, o[k]]);
+      return r;
+    };
+  }
+  if (!Array.from) {
+    Array.from = function (a) {
+      var r = [], i;
+      for (i = 0; i < a.length; i++) r.push(a[i]);
+      return r;
+    };
+  }
+  if (!Array.prototype.includes) {
+    Array.prototype.includes = function (v) { return this.indexOf(v) !== -1; };
+  }
+  if (!String.prototype.includes) {
+    String.prototype.includes = function (v) { return this.indexOf(v) !== -1; };
+  }
+  if (window.NodeList && !NodeList.prototype.forEach) {
+    NodeList.prototype.forEach = Array.prototype.forEach;
+  }
+  if (window.HTMLCollection && !HTMLCollection.prototype.forEach) {
+    HTMLCollection.prototype.forEach = Array.prototype.forEach;
+  }
+  if (!Promise.prototype['finally']) {
+    Promise.prototype['finally'] = function (cb) {
+      return this.then(function (v) { return Promise.resolve(cb()).then(function () { return v; }); },
+        function (e) { return Promise.resolve(cb()).then(function () { throw e; }); });
+    };
+  }
+  if (!window.requestIdleCallback) {
+    window.requestIdleCallback = function (cb) { return setTimeout(function () { cb({ timeRemaining: function () { return 8; } }); }, 1); };
+  }
+
+  /* ---- 特性检测：失败加降级类 ---- */
+  var supports = (window.CSS && CSS.supports) ? function (p, v) { try { return CSS.supports(p, v); } catch (e) { return false; } } : function () { return false; };
+
+  /* flex gap 必须实测 */
+  function testFlexGap() {
+    try {
+      var box = d.createElement('div');
+      box.style.cssText = 'display:flex;flex-direction:column;position:absolute;visibility:hidden;';
+      box.style.rowGap = '10px';
+      box.appendChild(d.createElement('div'));
+      box.appendChild(d.createElement('div'));
+      (d.body || root).appendChild(box);
+      var ok = box.scrollHeight === 10;
+      box.parentNode.removeChild(box);
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  function testAspectRatio() {
+    if (!supports('aspect-ratio', '16 / 9')) return false;
+    try {
+      var el = d.createElement('div');
+      el.style.cssText = 'position:absolute;visibility:hidden;width:160px;';
+      el.style.aspectRatio = '16 / 9';
+      (d.body || root).appendChild(el);
+      var h = el.getBoundingClientRect().height;
+      el.parentNode.removeChild(el);
+      return h > 85 && h < 95;
+    } catch (e) { return false; }
+  }
+
+  function detect() {
+    if (!testFlexGap()) root.className += ' no-layout-gap';
+    if (!supports('width', 'clamp(1px, 2px, 3px)')) root.className += ' no-css-functions';
+    if (!testAspectRatio()) root.className += ' no-aspect-ratio';
+    if (!supports('display', 'grid')) root.className += ' no-grid';
+    if (window.fongmiBridge || window.fm) root.className += ' fm-native';
+    if (window.fongmiClient && window.fongmiClient.isLeanback) root.className += ' fm-tv';
+  }
+
+  if (d.body) detect();
+  else d.addEventListener('DOMContentLoaded', detect);
+})();
+</script>
+
+
+<style>
+/* ============ tokens ============ */
+:root{
+  --ink:#0B0910;
+  --panel:rgba(22,16,32,0.86);
+  --panel-2:rgba(30,22,42,0.9);
+  --line:rgba(255,255,255,0.10);
+  --text:#F3EFF6;
+  --muted:#ADA6BC;
+
+  /* 浮层实底：带一点蓝紫，比纯黑活泼 */
+  --solid:#100C18;
+  --solid-2:#1C1728;
+  --solid-3:#261E36;
+  --amber:#00AEEC;      /* 焦点 / B站蓝 */
+  --signal:#FB7299;     /* 播放 / B站粉 */
+  --pink2:#FF9BB8;      /* 亮粉 */
+  --radius:16px;        /* 更圆润 */
+
+  --safe-top:0px;
+  --safe-bottom:0px;
+  --safe-left:0px;
+  --safe-right:0px;
+}
+:root{
+  --safe-top:var(--fm-safe-top,0px);
+  --safe-bottom:var(--fm-safe-bottom,0px);
+  --safe-left:var(--fm-safe-left,0px);
+  --safe-right:var(--fm-safe-right,0px);
+}
+@supports (top: max(0px, 1px)){
+  :root{
+    --safe-top:max(var(--fm-safe-top,0px), env(safe-area-inset-top,0px));
+    --safe-bottom:max(var(--fm-safe-bottom,0px), env(safe-area-inset-bottom,0px));
+    --safe-left:max(var(--fm-safe-left,0px), env(safe-area-inset-left,0px));
+    --safe-right:max(var(--fm-safe-right,0px), env(safe-area-inset-right,0px));
+  }
+}
+
+*{ -webkit-tap-highlight-color:transparent; }
+html,body{
+  margin:0; padding:0;
+  height:100%;
+  background:transparent;           /* App 壁纸透出，不写死背景 */
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC","Source Han Sans SC","Microsoft YaHei",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+/* 浏览器预览时给一个底色，App 内保持透明 */
+html:not(.fm-native) body{ background:#0A0D13; }
+
+body{
+  min-height:100vh;
+  min-height:var(--fm-web-height,100vh);
+  overflow-x:hidden;
+  position:relative;
+}
+
+/* 压暗蒙版：WebHome 页面是透明的，App 壁纸直接透上来，
+   卡片和文字压在星云上根本看不清。这层垫在内容底下、壁纸之上，
+   把壁纸压下去但不盖死 —— 氛围还在，可读性回来了。 */
+body::before{
+  content:'';
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
+  z-index:-2;
+  /* 二次元梦幻夜空：粉紫渐变打底 + 多处柔光斑，不透明、不靠壁纸 */
+  background:
+    radial-gradient(90% 55% at 82% -8%,  rgba(255,155,184,0.30), transparent 62%),
+    radial-gradient(85% 50% at 12% 6%,   rgba(140,110,240,0.28), transparent 60%),
+    radial-gradient(80% 55% at 95% 60%,  rgba(0,174,236,0.20),  transparent 58%),
+    radial-gradient(90% 60% at 5% 108%,  rgba(251,114,153,0.24), transparent 60%),
+    linear-gradient(165deg, #1a1030 0%, #150e26 38%, #10101f 70%, #0d0a18 100%);
+  pointer-events:none;
+}
+/* 极光带：斜向流光，极缓慢漂移 */
+body::after{
+  content:'';
+  position:fixed;
+  top:-20%; left:-20%; right:-20%; bottom:-20%;
+  z-index:-1;
+  background:
+    radial-gradient(40% 22% at 30% 30%, rgba(255,155,184,0.14), transparent 70%),
+    radial-gradient(46% 24% at 70% 66%, rgba(120,150,255,0.12), transparent 70%);
+  filter:blur(30px);
+  opacity:.9;
+  pointer-events:none;
+  animation:aurora 26s ease-in-out infinite alternate;
+}
+@keyframes aurora{
+  0%   { transform:translate(0,0) scale(1); }
+  50%  { transform:translate(3%, -2%) scale(1.08); }
+  100% { transform:translate(-3%, 2%) scale(1.04); }
+}
+@media (prefers-reduced-motion: reduce){ body::after{ animation:none; } }
+
+/* 星星点缀：小圆点铺一层，很淡 */
+.stars{ position:fixed; inset:0; top:0;left:0;right:0;bottom:0; z-index:-1; pointer-events:none;
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 30%, rgba(255,255,255,.5), transparent),
+    radial-gradient(1.5px 1.5px at 65% 15%, rgba(255,255,255,.4), transparent),
+    radial-gradient(1px 1px at 80% 45%, rgba(255,255,255,.45), transparent),
+    radial-gradient(1.5px 1.5px at 40% 70%, rgba(255,255,255,.35), transparent),
+    radial-gradient(1px 1px at 90% 80%, rgba(255,255,255,.4), transparent),
+    radial-gradient(1.5px 1.5px at 15% 85%, rgba(255,255,255,.4), transparent),
+    radial-gradient(1px 1px at 55% 55%, rgba(255,255,255,.3), transparent);
+  animation:twinkle 4s ease-in-out infinite;
+}
+@keyframes twinkle{ 0%,100%{ opacity:.6; } 50%{ opacity:1; } }
+@media (prefers-reduced-motion: reduce){ .stars{ animation:none; } }
+
+/* 樱花层：固定铺满、极淡、缓慢飘落。纯 CSS 花瓣，无图片。 */
+.sakura{ position:fixed; inset:0; top:0;left:0;right:0;bottom:0; z-index:-1; pointer-events:none; overflow:hidden; }
+.sakura i{
+  position:absolute; top:-8%;
+  background:radial-gradient(circle at 32% 28%, #FFD4E2, #FB7299 75%);
+  border-radius:14px 2px 14px 2px;
+  opacity:0;
+  box-shadow:0 0 6px rgba(251,114,153,0.5);
+  animation:fall linear infinite;
+}
+.sakura i:nth-child(1){ left:6%;  width:14px;height:14px; animation-duration:13s; animation-delay:0s;  }
+.sakura i:nth-child(2){ left:18%; width:18px;height:18px; animation-duration:17s; animation-delay:2s;  }
+.sakura i:nth-child(3){ left:31%; width:12px;height:12px; animation-duration:15s; animation-delay:6s;  }
+.sakura i:nth-child(4){ left:44%; width:16px;height:16px; animation-duration:19s; animation-delay:1s;  }
+.sakura i:nth-child(5){ left:56%; width:13px;height:13px; animation-duration:14s; animation-delay:8s;  }
+.sakura i:nth-child(6){ left:68%; width:17px;height:17px; animation-duration:18s; animation-delay:4s;  }
+.sakura i:nth-child(7){ left:79%; width:12px;height:12px; animation-duration:16s; animation-delay:10s; }
+.sakura i:nth-child(8){ left:88%; width:15px;height:15px; animation-duration:20s; animation-delay:3s;  }
+.sakura i:nth-child(9){ left:95%; width:11px;height:11px; animation-duration:15s; animation-delay:7s;  }
+.sakura i:nth-child(10){left:12%; width:13px;height:13px; animation-duration:21s; animation-delay:11s; }
+@keyframes fall{
+  0%   { transform:translateY(-12vh) translateX(0) rotate(0deg);     opacity:0; }
+  12%  { opacity:.85; }
+  50%  { transform:translateY(50vh) translateX(28px) rotate(180deg); }
+  88%  { opacity:.7; }
+  100% { transform:translateY(112vh) translateX(-12px) rotate(360deg); opacity:0; }
+}
+@media (prefers-reduced-motion: reduce){ .sakura{ display:none; } }
+
+img{ border:0; display:block; }
+button,input{ font:inherit; color:inherit; }
+button{ background:none; border:0; cursor:pointer; }
+
+/* ============ 顶栏 ============ */
+.top{
+  position:sticky; top:0; z-index:40;
+  padding:8px 12px;
+  padding-top:calc(var(--safe-top) + 4px);
+  padding-left:12px; padding-right:12px;
+  background:rgba(16,11,24,0.7);
+  border-bottom:1px solid rgba(251,114,153,0.14);
+}
+@supports (backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px)){
+  .top{ -webkit-backdrop-filter:blur(20px) saturate(1.3); backdrop-filter:blur(20px) saturate(1.3); background:rgba(16,11,24,0.55); }
+}
+@supports (backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px)){
+  .top{ -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); }
+}
+
+
+.brand{
+  display:inline-block; vertical-align:middle;
+  padding:0; margin:0;
+  line-height:40px;
+  white-space:nowrap;
+}
+/* 播放键：状态灯藏在这里 —— 网络断了它会变红，平时是 YouTube 红 */
+.brand .mark{
+  display:inline-block; vertical-align:middle;
+  color:var(--signal);
+  line-height:0;
+  transition:color .25s ease;
+  animation:breathe 3.2s ease-in-out infinite;
+  transform-origin:center;
+}
+@keyframes breathe{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.06); } }
+@media (prefers-reduced-motion: reduce){ .brand .mark{ animation:none; } }
+.brand .mark svg{ display:block; }
+.brand .mark.ok{ color:var(--signal); }
+.brand .mark.bad{ color:#8A93A0; }        /* 断网：褪成灰，不刺眼但看得出来 */
+.brand .word{
+  display:inline-block; vertical-align:middle;
+  margin-left:8px;
+  font-size:19px; font-weight:800;
+  /* 圆润无衬线优先，接近 B 站字标的软萌感 */
+  font-family:"Baloo 2","Quicksand","Nunito","PingFang SC","Hiragino Sans GB",
+              -apple-system,"Segoe UI",system-ui,sans-serif;
+  letter-spacing:-.01em;
+  /* 粉→蓝渐变填充，B 站双色调 */
+  background:linear-gradient(100deg,#FB7299 0%,#FB7299 45%,#00AEEC 100%);
+  -webkit-background-clip:text; background-clip:text;
+  -webkit-text-fill-color:transparent; color:transparent;
+  padding-right:2px;                       /* 渐变裁字右侧别切到 */
+  text-shadow:0 1px 8px rgba(251,114,153,0.2);
+}
+.brand:active .word{ transform:scale(0.96); }
+.brand:active .mark{ transform:scale(0.94); }
+.brand:focus .word{ -webkit-text-fill-color:var(--amber); color:var(--amber); background:none; }
+.brand:focus .mark{ color:var(--amber); }
+
+.gear{
+  display:inline-block; vertical-align:middle;
+  width:40px; height:40px;
+  border:0; background:none;
+  color:var(--muted);
+  line-height:0;
+  text-align:center;
+  transition:color .18s ease, transform .3s ease;
+}
+.gear svg{ display:inline-block; vertical-align:middle; }
+.gear:active{ transform:rotate(60deg); }
+.gear:focus{ color:var(--amber); transform:rotate(60deg); }
+@media (prefers-reduced-motion: reduce){
+  .gear{ transition:none; }
+  .gear:active, .gear:focus{ transform:none; }
+}
+
+/* 搜索联想 */
+.sug{
+  position:absolute;
+  top:44px; left:0; right:0;
+  z-index:80;
+  display:none;
+  border-radius:14px;
+  overflow:hidden;
+  background:rgba(18,21,29,0.98);
+  border:1px solid var(--line);
+  box-shadow:0 16px 40px rgba(0,0,0,0.5);
+}
+.sug.open{ display:block; }
+
+/* 搜索态：内容区轻微压暗，注意力收到搜索框上 */
+body.searching .wrap{ opacity:.45; transition:opacity .2s ease; }
+body.searching .tabs{ opacity:.45; transition:opacity .2s ease; }
+.wrap, .tabs{ transition:opacity .2s ease; }
+@media (prefers-reduced-motion: reduce){
+  body.searching .wrap, body.searching .tabs, .wrap, .tabs{ transition:none; }
+}
+.sug-row{
+  position:relative;
+  border-bottom:1px solid rgba(255,255,255,0.05);
+}
+.sug-row:last-child{ border-bottom:0; }
+.sug-hit{
+  display:block; width:100%;
+  padding:12px 42px 12px 14px;
+  text-align:left;
+  font-size:14px;
+  color:var(--text);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.sug-row.on,
+.sug-hit:focus{ background:rgba(0,174,236,0.14); }
+.sug-row.on .sug-hit,
+.sug-hit:focus{ color:var(--amber); }
+.sug .k{
+  color:var(--muted);
+  margin-right:10px;
+  display:inline-flex;
+  vertical-align:-2px;
+}
+.sug-del{
+  position:absolute;
+  right:4px; top:4px;
+  width:36px; height:36px;
+  color:var(--muted);
+  font-size:17px; line-height:36px; text-align:center;
+}
+.sug-del:focus{ color:var(--amber); }
+.search{
+  display:inline-block; vertical-align:middle;
+  width:auto; max-width:none;
+  position:relative;
+  margin-right:0;
+}
+/* logo 和齿轮一行，搜索框独占一行、左右顶满 */
+.top-row{
+  padding-top:2px;
+  margin-bottom:8px;
+  white-space:nowrap;
+  position:relative;
+}
+.top-row .gear{ position:absolute; right:0; top:8px; margin-left:0; }
+.search{ display:block; width:100%; }
+.search input{ height:42px; line-height:42px; font-size:15px; }
+.search .go{ top:6px; right:6px; }
+.sug{ top:48px; }
+.search input{
+  width:100%; box-sizing:border-box;
+  height:38px; line-height:38px;
+  padding:0 40px 0 14px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:var(--panel-2);
+  outline:none;
+  font-size:14px;
+}
+.search input:focus{ border-color:var(--signal); box-shadow:0 0 0 3px rgba(251,114,153,0.18); }
+/* 系统自带的清除按钮：大小由内核决定，CSS 改不动，只能藏掉自己画 */
+.search input::-webkit-search-cancel-button,
+.search input::-webkit-search-decoration{
+  -webkit-appearance:none;
+  appearance:none;
+  display:none;
+}
+.search input{ padding-right:76px; }   /* 给清空 + 搜索两个按钮腾位置 */
+
+.search .clr{
+  position:absolute;
+  top:5px; right:40px;
+  width:32px; height:32px;
+  border-radius:50%;
+  color:var(--muted);
+  display:none;
+  align-items:center; justify-content:center;
+  padding:0;
+}
+.search .clr.on{ display:inline-flex; }
+.search .clr:active{ color:var(--text); transform:scale(0.9); }
+.search .clr:focus{ color:var(--amber); }
+
+/* 两个按钮之间加一道细分隔，视觉上不糊成一坨 */
+.search .clr.on + .go::before{
+  content:'';
+  position:absolute;
+  left:-4px; top:8px;
+  width:1px; height:16px;
+  background:rgba(255,255,255,0.14);
+}
+
+.search .go{
+  position:absolute;
+  top:5px; right:6px;
+  width:32px; height:32px;
+  border-radius:50%;
+  color:var(--muted);
+  display:inline-flex;
+  align-items:center; justify-content:center;
+  padding:0;
+}
+.search .go:active{ color:var(--text); }
+.search .go:focus{ color:var(--amber); }
+
+.icon-btn{
+  display:inline-block; vertical-align:middle;
+  height:38px; min-width:38px; padding:0 10px;
+  border-radius:999px; border:1px solid var(--line);
+  background:var(--panel-2);
+  font-size:13px; color:var(--muted);
+  margin-left:6px;
+}
+.icon-btn:focus{ color:var(--ink); background:var(--amber); border-color:var(--amber); }
+
+/* ============ 分类 tab ============ */
+.tabs{
+  white-space:nowrap; overflow-x:auto; overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  margin-top:10px;
+  padding-bottom:2px;
+  /* 让 tabs 自己吃掉横向手势，不要交给页面（否则会被判成切类别） */
+  touch-action:pan-x;
+  overscroll-behavior-x:contain;   /* 横滑到头不带动页面 */
+}
+.tabs::-webkit-scrollbar{ display:none; }
+
+/* 二级页标题栏：和 tabs 互斥显示 */
+.liveareas{
+  display:none;
+  white-space:nowrap; overflow-x:auto; overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  margin-top:8px; padding-bottom:2px;
+  touch-action:pan-x;              /* 声明横向手势归它自己 */
+  overscroll-behavior-x:contain;
+}
+.liveareas.on{ display:block; }
+.liveareas::-webkit-scrollbar{ display:none; }
+.larea{
+  display:inline-block;
+  padding:5px 13px; margin-right:7px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:var(--panel-2);
+  color:var(--muted);
+  font-size:12px;
+  white-space:nowrap;
+}
+.larea.on{ background:linear-gradient(135deg,var(--signal),var(--pink2)); color:#fff; border-color:transparent; box-shadow:0 2px 10px rgba(251,114,153,0.3); font-weight:600; }
+
+.subbar{
+  display:none;
+  position:relative;
+  margin-top:10px;
+  padding-bottom:2px;
+  white-space:nowrap;
+}
+.subbar.on{ display:block; }
+.tabs.off{ display:none; }
+
+.sub-back{
+  display:inline-flex; vertical-align:middle;
+  align-items:center; justify-content:center;
+  width:36px; height:36px;
+  border-radius:50%;
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  color:var(--text);
+  padding:0;
+}
+.sub-back svg{ margin-left:-1px; }
+.sub-back:focus{ background:var(--amber); border-color:var(--amber); color:#0A0D13; }
+
+.sub-meta{
+  display:inline-block; vertical-align:middle;
+  margin-left:10px;
+  max-width:calc(100% - 150px);
+  overflow:hidden;
+}
+.sub-name{
+  font-size:14px; font-weight:600;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.sub-desc{
+  font-size:11px; color:var(--muted);
+  margin-top:2px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.sub-play{
+  position:absolute;
+  right:0; top:1px;
+  z-index:3;
+  padding:9px 15px;
+  border-radius:999px;
+  background:var(--signal);
+  color:#fff;
+  font-size:12px; font-weight:600;
+  white-space:nowrap;
+}
+.sub-play:active{ transform:scale(0.95); }
+.sub-play.busy{ opacity:.6; }
+.sub-play:focus{ background:var(--amber); color:#0A0D13; }
+.sub-play.hide{ display:none; }
+.tab{
+  display:inline-block;
+  padding:7px 15px; margin-right:8px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:var(--panel-2);
+  color:var(--muted);
+  font-size:13px; font-weight:500;
+  white-space:nowrap;
+  transition:background .16s ease, color .16s ease;
+}
+.tab.on{ background:linear-gradient(135deg,var(--signal),var(--pink2)); color:#fff; border-color:transparent; font-weight:700; box-shadow:0 3px 12px rgba(251,114,153,0.35); }
+.tab:focus{ border-color:var(--amber); color:var(--amber); }
+.tab.on:focus{ color:#0A0D13; background:var(--amber); }
+
+/* ============ 列表 ============ */
+/* 下拉刷新指示器：藏在顶栏下面，跟着手指下来 */
+.pull{
+  position:fixed;
+  left:0; right:0;
+  top:0;
+  z-index:20;
+  height:0;
+  text-align:center;
+  pointer-events:none;
+}
+.pull-spin{
+  display:inline-block;
+  width:36px; height:36px;
+  border-radius:50%;
+  background:var(--solid-2);
+  border:1px solid rgba(255,255,255,0.12);
+  color:var(--muted);
+  line-height:34px;
+  opacity:0;
+  transform:translateY(-40px);
+  box-shadow:0 6px 20px rgba(0,0,0,0.4);
+}
+.pull-spin svg{ vertical-align:middle; }
+.pull-spin.ready{ color:var(--amber); border-color:var(--amber); }
+.pull-spin.spin{ color:var(--amber); border-color:var(--amber); animation:spin .7s linear infinite; }
+
+/* 橡皮筋：整块内容跟着手指走，松手弹回 */
+#wrap{ will-change:transform; }
+#wrap.snap{ transition:transform .42s cubic-bezier(.22,1,.36,1); }
+
+/* 左右切类别：跟手位移 → 松手滑出 → 新内容从另一侧滑入 */
+#wrap.swipe{ transition:transform .2s ease-out, opacity .2s ease-out; }
+#wrap.in-left{ animation:inLeft .34s cubic-bezier(.22,1,.36,1); }
+#wrap.in-right{ animation:inRight .34s cubic-bezier(.22,1,.36,1); }
+@keyframes cardIn{ from{ opacity:0; transform:translateY(14px) scale(.98); } to{ opacity:1; transform:none; } }
+.grid .card:nth-child(1){animation-delay:.02s}.grid .card:nth-child(2){animation-delay:.06s}
+.grid .card:nth-child(3){animation-delay:.10s}.grid .card:nth-child(4){animation-delay:.14s}
+.grid .card:nth-child(5){animation-delay:.18s}.grid .card:nth-child(6){animation-delay:.22s}
+.grid .card:nth-child(n+7){animation-delay:.26s}
+@media (prefers-reduced-motion: reduce){ .card{ animation:none; } }
+@keyframes inLeft{
+  from{ transform:translateX(-28%); opacity:0; }
+  to{ transform:translateX(0); opacity:1; }
+}
+@keyframes inRight{
+  from{ transform:translateX(28%); opacity:0; }
+  to{ transform:translateX(0); opacity:1; }
+}
+@media (prefers-reduced-motion: reduce){
+  #wrap.swipe{ transition:none; }
+  #wrap.in-left, #wrap.in-right{ animation:none; }
+}
+@media (prefers-reduced-motion: reduce){
+  #wrap.snap{ transition:none; }
+  .pull-spin.spin{ animation:none; }
+}
+
+.wrap{
+  padding:16px 8px 40px;
+  padding-left:8px; padding-right:8px;
+  padding-bottom:calc(var(--safe-bottom) + 40px);
+}
+.grid{ font-size:0; margin:0 -6px; }
+.card{
+  display:inline-block; vertical-align:top;
+  animation:cardIn .42s cubic-bezier(.22,1,.36,1) both;
+  width:50%;
+  box-sizing:border-box;
+  padding:0 6px 18px;
+  font-size:14px;
+  text-align:left;
+}
+@media (min-width:640px){ .card{ width:33.3333%; } }
+@media (min-width:960px){ .card{ width:25%; } }
+@media (min-width:1400px){ .card{ width:20%; } }
+
+.card-inner{
+  display:block; width:100%;
+  border-radius:var(--radius);
+  overflow:hidden;
+  background:var(--panel);
+  border:1px solid rgba(251,114,153,0.10);
+  text-align:left;
+  padding:0;
+  transition:transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.card-inner:hover{ box-shadow:0 6px 20px rgba(251,114,153,0.14); }
+.card-inner:active{ transform:scale(0.97); }
+.card-inner:focus{
+  border-color:var(--signal);
+  box-shadow:0 0 0 2px rgba(251,114,153,0.5), 0 8px 24px rgba(251,114,153,0.25);
+  transform:translateY(-3px);
+}
+@media (prefers-reduced-motion: reduce){
+  .card-inner{ transition:none; }
+  .card-inner:active{ transform:none; }
+}
+.thumb{
+  position:relative;
+  width:100%;
+  padding-top:56.25%;              /* 固定 16:9，不依赖 aspect-ratio */
+  background:rgba(255,255,255,0.05);
+  overflow:hidden;
+}
+.thumb img{
+  position:absolute;
+  top:0; left:0; width:100%; height:100%;
+  object-fit:cover;
+}
+.thumb img.lazy{ opacity:0; }
+.thumb img.in{ opacity:1; transition:opacity .28s ease; }
+@media (prefers-reduced-motion: reduce){
+  .thumb img.in{ transition:none; }
+}
+.badge{
+  position:absolute;
+  right:6px; bottom:6px;
+  padding:1px 6px;
+  border-radius:6px;
+  background:rgba(0,0,0,0.82);
+  color:#fff;
+  font-size:11px; line-height:18px;
+  font-weight:600;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.02em;
+}
+.badge.live{ background:linear-gradient(135deg,var(--signal),var(--pink2)); font-weight:700; letter-spacing:.04em; }
+.badge.pgc{ left:6px; right:auto; background:linear-gradient(135deg,var(--signal),var(--pink2)); font-weight:700; }
+.badge.list{ left:6px; right:auto; background:rgba(0,0,0,0.78); }
+.meta{ padding:9px 10px 12px; }
+.title{
+  font-size:13px; line-height:1.4; font-weight:600;
+  color:var(--text);
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+  overflow:hidden;
+  height:37px;              /* 固定两行高，1 行标题也占两行位，卡片就齐 */
+  letter-spacing:.01em;
+}
+.sub{
+  margin-top:7px;
+  font-size:11px; line-height:1.3;
+  color:var(--muted);
+  opacity:.85;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* ============ 状态 ============ */
+.moe-empty{ text-align:center; padding:50px 20px 20px; }
+.moe-empty svg{ animation:moeBob 2.4s ease-in-out infinite; }
+@keyframes moeBob{ 0%,100%{ transform:translateY(0) rotate(-2deg); } 50%{ transform:translateY(-7px) rotate(2deg); } }
+@media (prefers-reduced-motion: reduce){ .moe-empty svg{ animation:none; } }
+.moe-text{ margin-top:14px; font-size:15px; font-weight:700; color:var(--text); }
+.moe-sub{ margin-top:6px; font-size:12px; color:var(--muted); }
+.state{
+  padding:60px 20px;
+  text-align:center;
+  color:var(--muted);
+  font-size:13px;
+}
+.state strong{ display:block; color:var(--text); font-size:15px; margin-bottom:8px; }
+.state .act{
+  display:inline-block;
+  margin-top:14px; padding:9px 18px;
+  border-radius:999px;
+  background:var(--panel-2); border:1px solid var(--line);
+  color:var(--text); font-size:13px;
+}
+.state .act:focus{ border-color:var(--amber); color:var(--amber); }
+.skel .card-inner{
+  background:var(--panel);
+  border:1px solid transparent;
+  border-radius:var(--radius);
+  overflow:hidden;
+  width:100%;
+  display:block;
+  cursor:default;
+}
+.skel .thumb{ background:rgba(251,114,153,0.06); }
+.skel .meta{ padding:9px 10px 12px; }
+.skel .bar{
+  height:11px;
+  border-radius:5px;
+  background:rgba(255,255,255,0.08);
+  margin-bottom:7px;
+}
+.skel .bar.short{ width:55%; margin-bottom:0; height:9px; background:rgba(255,255,255,0.05); }
+
+/* 微微呼吸，别做跑马灯高光：老 WebView 上渐变动画很容易掉帧 */
+.skel .card-inner{ animation:pulse 1.4s ease-in-out infinite; }
+.skel .card:nth-child(2n) .card-inner{ animation-delay:.18s; }
+.skel .card:nth-child(3n) .card-inner{ animation-delay:.36s; }
+@keyframes pulse{
+  0%,100%{ opacity:1; }
+  50%{ opacity:.55; }
+}
+@media (prefers-reduced-motion: reduce){
+  .skel .card-inner{ animation:none; }
+}
+
+.spinner{
+  width:22px; height:22px; margin:0 auto 12px;
+  border-radius:50%;
+  border:2px solid rgba(255,255,255,0.16);
+  border-top-color:var(--amber);
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce){ .skel .card-inner{
+  background:var(--panel);
+  border:1px solid transparent;
+  border-radius:var(--radius);
+  overflow:hidden;
+  width:100%;
+  display:block;
+  cursor:default;
+}
+.skel .thumb{ background:rgba(251,114,153,0.06); }
+.skel .meta{ padding:9px 10px 12px; }
+.skel .bar{
+  height:11px;
+  border-radius:5px;
+  background:rgba(255,255,255,0.08);
+  margin-bottom:7px;
+}
+.skel .bar.short{ width:55%; margin-bottom:0; height:9px; background:rgba(255,255,255,0.05); }
+
+/* 微微呼吸，别做跑马灯高光：老 WebView 上渐变动画很容易掉帧 */
+.skel .card-inner{ animation:pulse 1.4s ease-in-out infinite; }
+.skel .card:nth-child(2n) .card-inner{ animation-delay:.18s; }
+.skel .card:nth-child(3n) .card-inner{ animation-delay:.36s; }
+@keyframes pulse{
+  0%,100%{ opacity:1; }
+  50%{ opacity:.55; }
+}
+@media (prefers-reduced-motion: reduce){
+  .skel .card-inner{ animation:none; }
+}
+
+.spinner{ animation:none; } }
+.more{ padding:18px 0 4px; text-align:center; }
+
+/* ============ 浮层 ============ */
+.sheet{
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
+  z-index:60;
+  display:none;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  background:#0A0D13;
+}
+.sheet.open{ display:block; }
+body.locked{ overflow:hidden; }
+
+.hero{ position:relative; width:100%; padding-top:56.25%; background:#101319; overflow:hidden; }
+.hero img{ position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
+.hero .fade{
+  position:absolute; left:0; right:0; bottom:0;
+  height:38%;
+  background:linear-gradient(to bottom, rgba(6,8,12,0), rgba(6,8,12,0.96));
+}
+.hero .play{
+  position:absolute;
+  left:50%; top:50%;
+  margin-left:-32px; margin-top:-32px;
+  width:64px; height:64px; border-radius:50%;
+  background:var(--signal);
+  color:#fff; font-size:22px; line-height:64px; text-align:center;
+  box-shadow:0 8px 28px rgba(251,114,153,0.4);
+}
+.hero .play:focus{ background:var(--amber); color:#0A0D13; box-shadow:0 0 0 3px rgba(0,174,236,0.5); }
+.sheet-head{
+  position:sticky; top:0; z-index:10;
+  background:#0A0D13;
+  /* 安全区：先写不带 env() 的兜底，再写带 env() 的，老内核只吃第一条 */
+  padding-top:var(--fm-safe-top, 0px);
+  padding-top:var(--safe-top);
+  padding-left:12px; padding-right:12px;
+  border-bottom:1px solid var(--line);
+  white-space:nowrap;
+}
+.sheet-back{
+  display:inline-flex; vertical-align:middle;
+  align-items:center; justify-content:center;
+  width:36px; height:36px; margin:9px 0;
+  border-radius:50%;
+  background:var(--solid-2);
+  border:1px solid rgba(255,255,255,0.12);
+  color:var(--text);
+  padding:0;
+}
+.sheet-back svg{ margin-left:-1px; }   /* 视觉居中：箭头的重心偏右 */
+.sheet-back:focus{ background:var(--amber); border-color:var(--amber); color:#0A0D13; }
+.sheet-title{
+  display:inline-block; vertical-align:middle;
+  margin-left:12px;
+  font-size:16px; font-weight:700; letter-spacing:.02em;
+}
+
+.row{ margin:0 -5px 18px; font-size:0; }
+.btn{
+  display:inline-block;
+  margin:0 5px 8px;
+  padding:12px 20px;
+  border-radius:999px;
+  background:var(--solid-2);
+  border:1px solid rgba(255,255,255,0.12);
+  font-size:13px; font-weight:600;
+  color:var(--text);
+}
+.btn:active{ transform:scale(0.96); }
+.btn.primary{ background:linear-gradient(135deg,var(--signal),var(--pink2)); border-color:transparent; color:#fff; box-shadow:0 4px 14px rgba(251,114,153,0.3); }
+.btn:focus{ border-color:var(--amber); color:var(--amber); }
+.btn.primary:focus{ background:var(--amber); color:#0A0D13; }
+.section-title{
+  font-size:12px; letter-spacing:.16em; color:var(--muted);
+  text-transform:uppercase;
+  margin:6px 0 10px;
+}
+
+/* 设置 / 自检 */
+.panel{
+  max-width:640px; margin:0 auto;
+  padding:18px 16px 40px;
+  padding-bottom:calc(var(--safe-bottom) + 40px);
+}
+.field{ margin-bottom:16px; }
+.field label{
+  display:block;
+  font-size:12px; letter-spacing:.02em;
+  color:#B7C2CE;
+  margin-bottom:8px;
+}
+.field select{ display:none; }        /* 藏掉原生 select，但保留元素：getVal/setVal 照旧工作 */
+.field input, .field select{
+  width:100%; box-sizing:border-box;
+  height:46px; padding:0 14px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:var(--solid-2);
+  color:var(--text);
+  outline:none; font-size:14px;
+  -webkit-appearance:none; appearance:none;
+}
+.field select,
+.field select option,
+.field select optgroup{
+  background-color:var(--solid-2);
+  color:#ECF1F6;                 /* 有的 WebView 用系统调色板渲染 option，会出黑字 */
+  -webkit-text-fill-color:#ECF1F6;
+}
+.field select{
+  /* 自绘箭头：系统默认箭头在深色背景下经常是黑的，看不见 */
+  background-image:linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                   linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:calc(100% - 18px) 19px, calc(100% - 13px) 19px;
+  background-size:5px 5px, 5px 5px;
+  background-repeat:no-repeat;
+  padding-right:38px;
+}
+.field input:focus, .field select:focus{
+  border-color:var(--amber);
+  background-color:var(--solid-3);
+}
+.field input::placeholder{ color:rgba(154,166,180,0.5); }
+.adv-toggle{
+  display:block; width:100%;
+  padding:14px 0;
+  margin:6px 0 4px;
+  text-align:left;
+  font-size:13px; color:var(--muted);
+  border-top:1px solid rgba(255,255,255,0.08);
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  position:relative;
+}
+.adv-toggle:focus{ color:var(--amber); }
+.adv-toggle .chev{
+  position:absolute; right:2px; top:13px;
+  font-size:18px; line-height:1;
+  transition:transform .22s ease;
+  display:inline-block;
+}
+.adv-toggle.open .chev{ transform:rotate(90deg); }
+
+.adv{
+  max-height:0;
+  overflow:hidden;
+  opacity:0;
+  transition:max-height .3s ease, opacity .22s ease;
+}
+.adv.open{ max-height:1200px; opacity:1; padding-top:16px; }
+@media (prefers-reduced-motion: reduce){
+  .adv, .adv-toggle .chev{ transition:none; }
+}
+
+.note{
+  font-size:12px; line-height:1.75; color:#98A4B2;
+  background:var(--solid-2); border:1px solid rgba(255,255,255,0.08);
+  border-left:3px solid rgba(0,174,236,0.55);
+  border-radius:12px; padding:13px 15px; margin-top:16px;
+}
+.note b{ color:var(--text); font-weight:600; }
+pre.code{
+  margin:10px 0 0;
+  padding:12px;
+  background:#05070B;
+  border:1px solid var(--line);
+  border-radius:10px;
+  font-size:11px; line-height:1.6;
+  color:#CBD6E2;
+  overflow-x:auto;
+  white-space:pre;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+.diag-line{
+  display:block;
+  padding:12px 14px; margin-bottom:9px;
+  border-radius:12px;
+  background:var(--solid-2); border:1px solid rgba(255,255,255,0.08);
+  font-size:12px; line-height:1.5; color:var(--muted);
+}
+.diag-line b{ color:var(--text); }
+.ok{ color:#57D9A3; }
+.bad{ color:#FF6B5E; }
+
+/* toast */
+.toast{
+  position:fixed;
+  left:50%; bottom:34px;
+  bottom:calc(var(--safe-bottom) + 34px);
+  z-index:90;
+  transform:translateX(-50%);
+  max-width:80%;
+  padding:10px 16px;
+  border-radius:999px;
+  background:rgba(20,24,32,0.95);
+  border:1px solid var(--line);
+  font-size:13px;
+  opacity:0; visibility:hidden;
+  transition:opacity .18s ease;
+}
+.toast.show{ opacity:1; visibility:visible; }
+
+/* TV */
+html.fm-tv .card{ width:25%; }
+html.fm-tv .title{ font-size:15px; max-height:42px; }
+html.fm-tv .sub{ font-size:12px; }
+html.fm-tv .tab{ font-size:15px; padding:8px 18px; }
+html.fm-tv .card-inner:focus{ box-shadow:0 0 0 3px var(--amber); }
+
+/* 降级 */
+html.no-css-functions .top{ padding-top:16px; }
+html.no-css-functions .wrap{ padding-bottom:48px; }
+
+/* 自绘下拉：原生 select 在 WebView 里弹的是系统对话框（白底黑字），
+   CSS 完全改不动，只能藏掉 select、自己画一个触发器 + 底部选择浮层。 */
+.picker{
+  width:100%; box-sizing:border-box;
+  height:46px; padding:0 40px 0 14px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:var(--solid-2);
+  color:var(--text);
+  font-size:14px;
+  text-align:left;
+  position:relative;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.picker:focus{ border-color:var(--amber); background:var(--solid-3); }
+.picker::after{
+  content:'';
+  position:absolute; right:16px; top:50%;
+  width:7px; height:7px;
+  margin-top:-5px;
+  border-right:1.6px solid var(--muted);
+  border-bottom:1.6px solid var(--muted);
+  transform:rotate(45deg);
+}
+
+/* 底部弹出的选择浮层 */
+.opt-mask{
+  position:fixed; inset:0;
+  top:0; left:0; right:0; bottom:0;
+  z-index:200;
+  background:rgba(0,0,0,0.6);
+  opacity:0; visibility:hidden;
+  transition:opacity .22s ease;
+}
+.opt-mask.on{ opacity:1; visibility:visible; }
+
+.opt-sheet{
+  position:fixed;
+  left:0; right:0; bottom:0;
+  z-index:201;
+  background:#12151D;
+  border-radius:20px 20px 0 0;
+  padding:8px 0 0;
+  padding-bottom:calc(var(--safe-bottom) + 8px);
+  transform:translateY(100%);
+  transition:transform .28s cubic-bezier(.22,1,.36,1);
+  max-height:70vh;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.opt-sheet.on{ transform:translateY(0); }
+@media (prefers-reduced-motion: reduce){
+  .opt-mask, .opt-sheet{ transition:none; }
+}
+
+.opt-grip{
+  width:36px; height:4px;
+  border-radius:2px;
+  background:rgba(255,255,255,0.18);
+  margin:6px auto 10px;
+}
+.opt-title{
+  font-size:13px; color:var(--muted);
+  padding:0 20px 10px;
+  border-bottom:1px solid rgba(255,255,255,0.07);
+}
+.opt-item{
+  display:block; width:100%;
+  padding:15px 20px;
+  text-align:left;
+  font-size:15px;
+  color:var(--text);
+  border-bottom:1px solid rgba(255,255,255,0.05);
+  position:relative;
+}
+.opt-item:last-child{ border-bottom:0; }
+.opt-item.on{ color:var(--signal); font-weight:700; }
+.opt-item.on::after{
+  content:'';
+  position:absolute; right:22px; top:50%;
+  width:6px; height:11px;
+  margin-top:-7px;
+  border-right:2px solid var(--signal);
+  border-bottom:2px solid var(--signal);
+  transform:rotate(45deg);
+}
+.opt-item:focus{ background:rgba(0,174,236,0.12); }
+
+.login{ font-size:12px; padding:9px 12px; border-radius:10px; background:var(--solid-2); border:1px solid rgba(255,255,255,0.08); color:var(--muted); margin:-4px 0 14px; }
+.login.ok{ color:#57D9A3; border-color:rgba(87,217,163,0.3); }
+.login.bad{ color:#FF6B5E; border-color:rgba(255,107,94,0.3); }
+</style>
+<style type="text/css">* {user-select: auto !important; -webkit-user-select: auto !important;}</style><input type="hidden" id="inject_idm_text_selection"><style></style></head>
+
+<body>
+
+<div class="stars" aria-hidden="true"></div>
+<div class="sakura" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<header class="top" id="top">
+  <div class="top-row">
+    <button class="brand" id="netBtn" aria-label="网络自检">
+      <span class="mark bad" id="netDot">
+        <svg viewBox="0 0 36 28" width="32" height="25" aria-hidden="true">
+          <!-- 天线 -->
+          <path d="M10 6 L6 2 M26 6 L30 2" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"></path>
+          <circle cx="6" cy="2" r="1.6" fill="currentColor"></circle>
+          <circle cx="30" cy="2" r="1.6" fill="currentColor"></circle>
+          <!-- 机身 -->
+          <rect x="2" y="6" width="32" height="20" rx="7" fill="currentColor"></rect>
+          <!-- 屏幕 -->
+          <rect x="5.5" y="9.5" width="25" height="13" rx="4" fill="#140F1C"></rect>
+          <!-- 眼睛 -->
+          <circle cx="12.5" cy="15.5" r="2.1" fill="#fff"></circle>
+          <circle cx="23.5" cy="15.5" r="2.1" fill="#fff"></circle>
+          <circle cx="13" cy="16" r="0.8" fill="#140F1C"></circle>
+          <circle cx="24" cy="16" r="0.8" fill="#140F1C"></circle>
+          <!-- 腮红 -->
+          <ellipse cx="9.5" cy="19" rx="1.6" ry="1" fill="#FF9BB8" opacity="0.8"></ellipse>
+          <ellipse cx="26.5" cy="19" rx="1.6" ry="1" fill="#FF9BB8" opacity="0.8"></ellipse>
+        </svg>
+      </span>
+      <span class="word" aria-label="bilibili">bilibili</span>
+    </button>
+
+    <button class="gear" id="setBtn" aria-label="设置">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
+  </div>
+
+  <span class="search">
+    <input id="q" type="search" placeholder="搜索视频、UP主、番剧" autocomplete="off">
+    <button class="clr" id="clrBtn" aria-label="清空">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 6 L18 18 M18 6 L6 18"></path>
+      </svg>
+    </button>
+    <button class="go" id="goBtn" aria-label="搜索">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle><path d="M16.5 16.5 L21 21"></path>
+      </svg>
+    </button>
+    <div class="sug" id="sug"></div>
+  </span>
+
+  <nav class="tabs" id="tabs"><button class="tab on">推荐</button><button class="tab">热门</button><button class="tab">排行榜</button><button class="tab">番剧</button><button class="tab">国创</button><button class="tab">电视剧</button><button class="tab">电影</button><button class="tab">纪录片</button><button class="tab">综艺</button><button class="tab">动画</button><button class="tab">鬼畜</button><button class="tab">舞蹈</button><button class="tab">游戏</button><button class="tab">知识</button><button class="tab">科技</button><button class="tab">美食</button><button class="tab">时尚</button><button class="tab">影视</button><button class="tab">音乐</button><button class="tab">直播</button></nav>
+  <nav class="liveareas" id="liveAreas"></nav>
+
+  <div class="subbar" id="subbar">
+    <button class="sub-back" id="subBack" aria-label="返回">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M15 5 L8 12 L15 19"></path>
+      </svg>
+    </button>
+    <div class="sub-meta">
+      <div class="sub-name" id="subName"></div>
+      <div class="sub-desc" id="subDesc"></div>
+    </div>
+    <button class="sub-play" id="subPlay">推送全部</button>
+  </div>
+</header>
+
+<div class="pull" id="pull">
+  <div class="pull-spin" id="pullSpin">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M21 12a9 9 0 1 1-6.2-8.6"></path>
+    </svg>
+  </div>
+</div>
+
+<main class="wrap" id="wrap">
+  <div id="list" class="grid"></div>
+  <div id="state" class="state"><strong>没能连上 B 站</strong><div>Failed to fetch</div><div style="margin-top:8px">需要代理时请在 App 里配置。搜索/UP主需要 WBI 签名，失败多为网络问题。</div></div>
+  <div id="more" class="more"></div>
+</main>
+
+<section class="sheet" id="settings">
+  <div class="sheet-head">
+    <button class="sheet-back" id="setBack" aria-label="返回">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M15 5 L8 12 L15 19"></path>
+      </svg>
+    </button>
+    <span class="sheet-title">设置</span>
+  </div>
+  <div class="panel">
+    <div class="field">
+      <label for="cookie">Cookie（登录态，1080P 必需）</label>
+      <input id="cookie" type="text" placeholder="SESSDATA=xxx; bili_jct=xxx; DedeUserID=xxx">
+    </div>
+    <div class="login" id="loginBox">未登录 · 画质上限 480P</div>
+
+    <div class="field">
+      <label for="quality">画质</label>
+      <button type="button" class="picker">1080P（需登录）</button><select id="quality">
+        <option value="127">最高（有 8K 就 8K）</option>
+        <option value="120">4K（需大会员）</option>
+        <option value="116">1080P60</option>
+        <option value="112">1080P+ 高码率（需大会员）</option>
+        <option value="80">1080P（需登录）</option>
+        <option value="64">720P</option>
+        <option value="32">480P</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="codec">编码</label>
+      <button type="button" class="picker">AVC / H.264（兼容性最好）</button><select id="codec">
+        <option value="7">AVC / H.264（兼容性最好）</option>
+        <option value="12">HEVC / H.265（省流，老设备可能解不了）</option>
+        <option value="13">AV1（最省流，需新硬件）</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="wall">播放页背景</label>
+      <button type="button" class="picker">视频封面（有氛围）</button><select id="wall">
+        <option value="pic">视频封面（有氛围）</option>
+        <option value="none">App 默认壁纸（干净）</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <button class="btn primary" id="saveBtn">保存</button>
+      <button class="btn" id="resetBtn">恢复默认</button>
+    </div>
+
+    <div class="note">
+      <b>关于 Cookie。</b>B 站的 1080P 及以上必须登录才给。Cookie 会存在本地（<code>fm.cache</code>），
+      只在请求 B 站接口时带上。<b>它等同于你的账号登录态，别贴给任何人。</b><br>
+      拿法：电脑浏览器登录 bilibili → F12 → Application → Cookies → 复制 <code>SESSDATA</code>、<code>bili_jct</code>、<code>DedeUserID</code> 三个值，
+      按 <code>名=值; 名=值</code> 的格式粘进来。
+    </div>
+
+    <div class="note">
+      <b>关于画质。</b>1080P 以上是视频、音频分离的 DASH 流，页面会自己拼成 MPD 交给播放器（和 YouTube 那套一样）。
+      分片走 <code>/webResource</code> 网关 —— B 站 CDN 强制校验 <code>Referer</code>，不走网关会 403。
+    </div>
+  </div>
+</section>
+
+<section class="sheet" id="net">
+  <div class="sheet-head">
+    <button class="sheet-back" id="netBack" aria-label="返回">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M15 5 L8 12 L15 19"></path>
+      </svg>
+    </button>
+    <span class="sheet-title">网络自检</span>
+  </div>
+  <div class="panel">
+    <div id="diag"></div>
+    <div class="row">
+      <button class="btn primary" id="runDiag">重新检测</button>
+    </div>
+  </div>
+</section>
+
+<div class="opt-mask" id="optMask"></div>
+<div class="opt-sheet" id="optSheet">
+  <div class="opt-grip"></div>
+  <div class="opt-title" id="optTitle"></div>
+  <div id="optList"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var API = 'https://api.bilibili.com';
+  var DEF_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
+  function $(id) { return document.getElementById(id); }
+  function setVal(id, v){ var e=$(id); if(e) e.value=v; }
+  function getVal(id){ var e=$(id); return e?String(e.value):''; }
+  function on(id,ev,fn){ var e=$(id); if(e) e.addEventListener(ev,fn); }
+
+  var prefs = { cookie: '', quality: '80', codec: '7', wall: 'pic', ua: DEF_UA };
+  function isNative(){ return !!(window.fm && window.fm.req); }
+
+  /* ---------- MD5（WBI 签名要用，纯 JS 实现） ---------- */
+  var md5 = (function () {
+    function rl(n, c) { return (n << c) | (n >>> (32 - c)); }
+    function au(x, y) {
+      var l = (x & 0xFFFF) + (y & 0xFFFF);
+      var m = (x >> 16) + (y >> 16) + (l >> 16);
+      return (m << 16) | (l & 0xFFFF);
+    }
+    function cmn(q, a, b, x, s, t) { return au(rl(au(au(a, q), au(x, t)), s), b); }
+    function ff(a,b,c,d,x,s,t){ return cmn((b&c)|((~b)&d),a,b,x,s,t); }
+    function gg(a,b,c,d,x,s,t){ return cmn((b&d)|(c&(~d)),a,b,x,s,t); }
+    function hh(a,b,c,d,x,s,t){ return cmn(b^c^d,a,b,x,s,t); }
+    function ii(a,b,c,d,x,s,t){ return cmn(c^(b|(~d)),a,b,x,s,t); }
+    function toBlocks(str) {
+      var nb = ((str.length + 8) >> 6) + 1;
+      var blk = [], i;
+      for (i = 0; i < nb * 16; i++) blk[i] = 0;
+      for (i = 0; i < str.length; i++) blk[i >> 2] |= (str.charCodeAt(i) & 0xFF) << ((i % 4) * 8);
+      blk[i >> 2] |= 0x80 << ((i % 4) * 8);
+      blk[nb * 16 - 2] = str.length * 8;
+      return blk;
+    }
+    function hex(n) { var s = '', j; for (j = 0; j < 4; j++) s += ('0' + ((n >> (j * 8)) & 0xFF).toString(16)).slice(-2); return s; }
+    return function (str) {
+      str = unescape(encodeURIComponent(str));
+      var x = toBlocks(str), a = 1732584193, b = -271733879, c = -1732584194, d = 271733878, k, aa, bb, cc, dd;
+      for (k = 0; k < x.length; k += 16) {
+        aa = a; bb = b; cc = c; dd = d;
+        a=ff(a,b,c,d,x[k],7,-680876936);d=ff(d,a,b,c,x[k+1],12,-389564586);c=ff(c,d,a,b,x[k+2],17,606105819);b=ff(b,c,d,a,x[k+3],22,-1044525330);
+        a=ff(a,b,c,d,x[k+4],7,-176418897);d=ff(d,a,b,c,x[k+5],12,1200080426);c=ff(c,d,a,b,x[k+6],17,-1473231341);b=ff(b,c,d,a,x[k+7],22,-45705983);
+        a=ff(a,b,c,d,x[k+8],7,1770035416);d=ff(d,a,b,c,x[k+9],12,-1958414417);c=ff(c,d,a,b,x[k+10],17,-42063);b=ff(b,c,d,a,x[k+11],22,-1990404162);
+        a=ff(a,b,c,d,x[k+12],7,1804603682);d=ff(d,a,b,c,x[k+13],12,-40341101);c=ff(c,d,a,b,x[k+14],17,-1502002290);b=ff(b,c,d,a,x[k+15],22,1236535329);
+        a=gg(a,b,c,d,x[k+1],5,-165796510);d=gg(d,a,b,c,x[k+6],9,-1069501632);c=gg(c,d,a,b,x[k+11],14,643717713);b=gg(b,c,d,a,x[k],20,-373897302);
+        a=gg(a,b,c,d,x[k+5],5,-701558691);d=gg(d,a,b,c,x[k+10],9,38016083);c=gg(c,d,a,b,x[k+15],14,-660478335);b=gg(b,c,d,a,x[k+4],20,-405537848);
+        a=gg(a,b,c,d,x[k+9],5,568446438);d=gg(d,a,b,c,x[k+14],9,-1019803690);c=gg(c,d,a,b,x[k+3],14,-187363961);b=gg(b,c,d,a,x[k+8],20,1163531501);
+        a=gg(a,b,c,d,x[k+13],5,-1444681467);d=gg(d,a,b,c,x[k+2],9,-51403784);c=gg(c,d,a,b,x[k+7],14,1735328473);b=gg(b,c,d,a,x[k+12],20,-1926607734);
+        a=hh(a,b,c,d,x[k+5],4,-378558);d=hh(d,a,b,c,x[k+8],11,-2022574463);c=hh(c,d,a,b,x[k+11],16,1839030562);b=hh(b,c,d,a,x[k+14],23,-35309556);
+        a=hh(a,b,c,d,x[k+1],4,-1530992060);d=hh(d,a,b,c,x[k+4],11,1272893353);c=hh(c,d,a,b,x[k+7],16,-155497632);b=hh(b,c,d,a,x[k+10],23,-1094730640);
+        a=hh(a,b,c,d,x[k+13],4,681279174);d=hh(d,a,b,c,x[k],11,-358537222);c=hh(c,d,a,b,x[k+3],16,-722521979);b=hh(b,c,d,a,x[k+6],23,76029189);
+        a=hh(a,b,c,d,x[k+9],4,-640364487);d=hh(d,a,b,c,x[k+12],11,-421815835);c=hh(c,d,a,b,x[k+15],16,530742520);b=hh(b,c,d,a,x[k+2],23,-995338651);
+        a=ii(a,b,c,d,x[k],6,-198630844);d=ii(d,a,b,c,x[k+7],10,1126891415);c=ii(c,d,a,b,x[k+14],15,-1416354905);b=ii(b,c,d,a,x[k+5],21,-57434055);
+        a=ii(a,b,c,d,x[k+12],6,1700485571);d=ii(d,a,b,c,x[k+3],10,-1894986606);c=ii(c,d,a,b,x[k+10],15,-1051523);b=ii(b,c,d,a,x[k+1],21,-2054922799);
+        a=ii(a,b,c,d,x[k+8],6,1873313359);d=ii(d,a,b,c,x[k+15],10,-30611744);c=ii(c,d,a,b,x[k+6],15,-1560198380);b=ii(b,c,d,a,x[k+13],21,1309151649);
+        a=ii(a,b,c,d,x[k+4],6,-145523070);d=ii(d,a,b,c,x[k+11],10,-1120210379);c=ii(c,d,a,b,x[k+2],15,718787259);b=ii(b,c,d,a,x[k+9],21,-343485551);
+        a=au(a,aa); b=au(b,bb); c=au(c,cc); d=au(d,dd);
+      }
+      return hex(a) + hex(b) + hex(c) + hex(d);
+    };
+  })();
+
+  /* ---------- 网络：走 Native ---------- */
+  async function req(url, opt) {
+    opt = opt || {};
+    var headers = opt.headers || {};
+    if (!headers['User-Agent']) headers['User-Agent'] = prefs.ua;
+    if (!headers.Referer) headers.Referer = 'https://www.bilibili.com/';
+    if (prefs.cookie && !headers.Cookie) headers.Cookie = prefs.cookie;
+
+    var wantJson = opt.responseType === 'json';
+    var body;
+    if (isNative()) {
+      // 一律按 text 取回，自己 parse。App 的 gson 严格模式对 B 站响应会 MalformedJson，
+      // 而且拿到原文才能在出错时看清返回的到底是什么。
+      var r = await fm.req(url, {
+        method: opt.method || 'GET',
+        headers: headers,
+        body: opt.body || '',
+        responseType: 'text',
+        timeout: opt.timeout || 20
+      });
+      if (!r || !r.ok) { var e=new Error((r&&(r.error||('HTTP '+r.status)))||'请求失败'); e.status=r?r.status:0; throw e; }
+      body = r.body;
+    } else {
+      var res = await fetch(url, { method: opt.method||'GET', headers: headers, body: opt.body||undefined });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      body = await res.text();
+    }
+
+    if (!wantJson) return body;
+
+    var txt = String(body);
+    // 有些接口返回 JSONP：callback({...})，剥掉外壳
+    var lp = txt.indexOf('('), rp = txt.lastIndexOf(')');
+    if (txt.charAt(0) !== '{' && txt.charAt(0) !== '[' && lp > 0 && rp > lp) {
+      txt = txt.slice(lp + 1, rp);
+    }
+    try {
+      return JSON.parse(txt);
+    } catch (pe) {
+      var head = String(body).replace(/\s+/g, ' ').slice(0, 120);
+      throw new Error('返回的不是JSON：' + head);
+    }
+  }
+
+  /* ---------- WBI 签名 ----------
+     B 站现在几乎所有接口都要 w_rid。算法：从 nav 接口拿 img_key/sub_key，
+     拼成 imgKey+subKey 后按固定的 64 位混淆表重排出 mixinKey，
+     再把请求参数按 key 排序拼成串 + mixinKey 做 md5。 */
+  var MIXIN_TAB = [46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52];
+  var wbiCache = { key: '', ts: 0 };
+
+  async function wbiKey() {
+    if (wbiCache.key && (Date.now() - wbiCache.ts) < 3600000) return wbiCache.key;
+    var txt = await req(API + '/x/web-interface/nav', { responseType: 'json', timeout: 15 });
+    var wbi = txt && txt.data && txt.data.wbi_img;
+    if (!wbi) throw new Error('拿不到 WBI key');
+    function tail(u){ var m=String(u).match(/\/([0-9a-f]+)\.png/); return m?m[1]:''; }
+    var raw = tail(wbi.img_url) + tail(wbi.sub_url);
+    var mixin = '', i;
+    for (i = 0; i < 32; i++) mixin += raw.charAt(MIXIN_TAB[i]);
+    wbiCache = { key: mixin, ts: Date.now() };
+    return mixin;
+  }
+
+  async function wbiSign(params) {
+    var mixin = await wbiKey();
+    params.wts = Math.round(Date.now() / 1000);
+    var keys = Object.keys(params).sort(), i, pairs = [];
+    for (i = 0; i < keys.length; i++) {
+      var v = String(params[keys[i]]).replace(/[!'()*]/g, '');
+      pairs.push(encodeURIComponent(keys[i]) + '=' + encodeURIComponent(v));
+    }
+    var q = pairs.join('&');
+    params.w_rid = md5(q + mixin);
+    return params;
+  }
+
+  function qs(params) {
+    var keys = Object.keys(params), i, p = [];
+    for (i = 0; i < keys.length; i++) p.push(encodeURIComponent(keys[i]) + '=' + encodeURIComponent(params[keys[i]]));
+    return p.join('&');
+  }
+
+  async function apiWbi(path, params) {
+    var signed = await wbiSign(params || {});
+    var json = await req(API + path + '?' + qs(signed), { responseType: 'json', timeout: 20 });
+    return json;
+  }
+
+  window.__bili = { md5: md5, wbiSign: wbiSign, req: req, apiWbi: apiWbi, prefs: prefs };
+  window.__biliReq = req;
+})();
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var B = window.__bili;
+  var API = 'https://api.bilibili.com';
+  var req = B.req, apiWbi = B.apiWbi, prefs = B.prefs;
+  var DEF_UA = prefs.ua;
+
+  function $(id){ return document.getElementById(id); }
+  function setVal(id,v){ var e=$(id); if(e) e.value=v; }
+  function getVal(id){ var e=$(id); return e?String(e.value):''; }
+  function on(id,ev,fn){ var e=$(id); if(e) e.addEventListener(ev,fn); }
+
+  var native=false, siteKey='';
+  function isNative(){ return !!(window.fm && window.fm.req); }
+  var elList=$('list'), elState=$('state'), elMore=$('more'), elTabs=$('tabs'), elToast=$('toast');
+
+  var TABS = [
+    { id:'rec',   name:'推荐',  type:'rec' },
+    { id:'pop',   name:'热门',  type:'pop' },
+    { id:'rank',  name:'排行榜', type:'rank', rid:0 },
+    { id:'bangumi',name:'番剧', type:'pgc',  season:1 },   // 番剧 PGC
+    { id:'guochuang',name:'国创',type:'pgc', season:4 },   // 国产动画
+    { id:'tvshow',name:'电视剧', type:'pgc', season:5 },
+    { id:'movie2',name:'电影',  type:'pgc',  season:2 },
+    { id:'doc',   name:'纪录片', type:'pgc',  season:3 },
+    { id:'variety',name:'综艺', type:'pgc',  season:7 },
+    { id:'douga', name:'动画',  type:'rank', rid:1 },
+    { id:'kichiku',name:'鬼畜', type:'rank', rid:119 },
+    { id:'dance', name:'舞蹈',  type:'rank', rid:129 },
+    { id:'game',  name:'游戏',  type:'rank', rid:4 },
+    { id:'knowledge',name:'知识',type:'rank',rid:36 },
+    { id:'tech',  name:'科技',  type:'rank', rid:188 },
+    { id:'food',  name:'美食',  type:'rank', rid:211 },
+    { id:'fashion',name:'时尚', type:'rank', rid:155 },
+    { id:'movie', name:'影视',  type:'rank', rid:181 },
+    { id:'music', name:'音乐',  type:'rank', rid:3 },
+    { id:'live',  name:'直播',  type:'live' }
+  ];
+
+  var view = { type:'rec', tab:'rec', rid:0, page:1, items:[], loading:false, seq:0, more:true, ep:'' };
+  var subStack = [];
+
+  function toast(m){ elToast.textContent=m; elToast.className='toast show'; clearTimeout(toast._t); toast._t=setTimeout(function(){elToast.className='toast';},2400); }
+  function bodyClass(n,on){ var b=document.body,c=(' '+b.className+' ').replace(new RegExp('\\s'+n+'\\s','g'),' '); b.className=(on?c+n:c).replace(/\s+/g,' ').replace(/^ | $/g,''); }
+  function hasBodyClass(n){ return (' '+document.body.className+' ').indexOf(' '+n+' ')!==-1; }
+  function netDot(ok){ var d=$('netDot'); if(d) d.className='mark '+(ok?'ok':'bad'); }
+
+  /* ---------- 存储 ---------- */
+  var store = {
+    get: async function(k){ try{ if(isNative()&&fm.cache){ return (await fm.cache.get(k,'bili'))||''; } }catch(e){} try{ return localStorage.getItem('bili_'+k)||''; }catch(e){ return ''; } },
+    set: async function(k,v){ try{ if(isNative()&&fm.cache){ await fm.cache.set(k,v,'bili'); return; } }catch(e){} try{ localStorage.setItem('bili_'+k,v); }catch(e){} }
+  };
+
+  /* ---------- 图片 ---------- */
+  function wallOf(item){ return prefs.wall==='pic' ? resUrl(item&&item.pic||'', 1280, 720) : ''; }
+  function thumbUrl(u, w, h){
+    // B 站图片 CDN 支持 @ 参数缩放：原图几 MB，缩略图几十 KB，秒出。
+    if(!u) return u;
+    if(/(hdslb\.com|bfs\/)/.test(u) && u.indexOf('@')===-1){
+      u = u + '@' + (w||480) + 'w_' + (h||300) + 'h_1c.webp';
+    }
+    return u;
+  }
+  function resUrl(u, w, h){
+    if(!u) return '';
+    if(u.indexOf('//')===0) u='https:'+u;
+    u = thumbUrl(u, w, h);
+    if(isNative()&&fm.res){ try{ return fm.res(u,{headers:{'User-Agent':DEF_UA,Referer:'https://www.bilibili.com/'}}); }catch(e){ return u; } }
+    return u;
+  }
+
+  /* ---------- 懒加载 ---------- */
+  var lazyIO=null, lazyList=[];
+  function lazyLoad(img){ if(img._done)return; img._done=true; var u=img.getAttribute('data-src'); if(!u)return; img.onload=function(){img.className='in';}; img.onerror=function(){img.onerror=null;img.style.opacity='0';}; img.src=resUrl(u); }
+  function lazyWatch(img){
+    if(window.IntersectionObserver){
+      if(!lazyIO){ lazyIO=new IntersectionObserver(function(es){ es.forEach(function(en){ if(en.isIntersecting){ lazyLoad(en.target); lazyIO.unobserve(en.target); } }); },{rootMargin:'250px 0px'}); }
+      lazyIO.observe(img); return;
+    }
+    lazyList.push(img);
+  }
+  function lazyScan(){ if(!lazyList.length)return; var h=window.innerHeight+400,i,img,r; for(i=lazyList.length-1;i>=0;i--){ img=lazyList[i]; r=img.getBoundingClientRect(); if(r.top<h&&r.bottom>-400){ lazyLoad(img); lazyList.splice(i,1); } } }
+
+  /* ---------- 数据规整 ---------- */
+  function dur(sec){ sec=+sec||0; var m=Math.floor(sec/60),s=sec%60; if(m>=60){ var h=Math.floor(m/60); m=m%60; return h+':'+('0'+m).slice(-2)+':'+('0'+s).slice(-2); } return m+':'+('0'+s).slice(-2); }
+  function durStr(s){ if(!s)return ''; if(typeof s==='number')return dur(s); var p=String(s).split(':'); return s; }
+  function cnt(n){ n=+n||0; return n>=10000?((n/10000).toFixed(1)+'万'):String(n); }
+
+  function toItem(v){
+    // 兼容 推荐/热门/排行/搜索/UP主 各自的字段名
+    var bvid = v.bvid || v.bv_id || (v.uri&&(v.uri.match(/BV[\w]+/)||[])[0]) || '';
+    var aid = v.aid || v.id || v.param || 0;
+    if(!bvid && !aid) return null;
+    var pic = v.pic || v.cover || (v.owner&&v.owner.face) || '';
+    var title = (v.title||'').replace(/<[^>]+>/g,'');
+    var author = (v.owner&&v.owner.name) || v.author || v.up_name || (v.owner_name||'') ;
+    var d = v.duration || (v.arc&&v.arc.duration) || v.len || 0;
+    var vc = (v.stat&&(v.stat.view||v.stat.play)) || v.play || v.view || 0;
+    return {
+      kind:'video', bvid:bvid, aid:aid,
+      // 列表接口本来就带 cid，接住它。
+      // 不接的话每次起播都要先请求一次 view 拿 cid —— 白等一个往返，这就是起播慢的原因。
+      cid: v.cid || 0,
+      _dur: (typeof v.duration === 'number' ? v.duration : 0),
+      title:title, author:author,
+      dur: (typeof d==='number'?dur(d):durStr(d)),
+      views: cnt(vc)+'观看',
+      pic: pic,
+      mid: (v.owner&&v.owner.mid) || v.mid || 0
+    };
+  }
+
+  function collectVideos(arr){ var out=[],i,it; if(!arr)return out; for(i=0;i<arr.length;i++){ it=toItem(arr[i]); if(it) out.push(it); } return out; }
+
+  /* ---------- 各来源 ---------- */
+  async function fetchRec(page){
+    var j = await apiWbi('/x/web-interface/index/top/feed/rcmd', { fresh_type:3, ps:20, fresh_idx:page, fresh_idx_1h:page, feed_version:'V8' });
+    return { items: collectVideos(j&&j.data&&j.data.item), more:true };
+  }
+  async function fetchPop(page){
+    if(popSub==='weekly'){
+      // 每周必看：先拿最新一期的期号
+      var lj = await req(API+'/x/web-interface/popular/series/list', { responseType:'json' });
+      var num = lj && lj.data && lj.data.list && lj.data.list[0] && lj.data.list[0].number;
+      if(!num) throw new Error('拿不到每周必看期号');
+      var wj = await req(API+'/x/web-interface/popular/series/one?number='+num, { responseType:'json' });
+      return { items: collectVideos(wj&&wj.data&&wj.data.list), more:false };
+    }
+    if(popSub==='history'){
+      var hj = await req(API+'/x/web-interface/popular/precious?page_size=100&page=1', { responseType:'json' });
+      return { items: collectVideos(hj&&hj.data&&hj.data.list), more:false };
+    }
+    var j = await req(API+'/x/web-interface/popular?ps=20&pn='+page, { responseType:'json' });
+    return { items: collectVideos(j&&j.data&&j.data.list), more: !(j&&j.data&&j.data.no_more) };
+  }
+  /* PGC（番剧/电影/电视剧等）。用索引接口按最近更新拉。
+     season_type: 1番剧 2电影 3纪录片 4国创 5电视剧 7综艺 */
+  async function fetchPgc(seasonType, page){
+    var j = await req('https://api.bilibili.com/pgc/season/index/result' +
+      '?season_type='+seasonType+'&order=3&sort=0&page='+page+'&pagesize=24&type=1&st='+seasonType,
+      { responseType:'json' });
+    var list = j&&j.data&&j.data.list;
+    return { items: collectPgc(list), more: !!(list && list.length>=24) };
+  }
+
+  function collectPgc(arr){
+    var out=[],i,v;
+    if(!arr) return out;
+    for(i=0;i<arr.length;i++){
+      v=arr[i];
+      var ss = v.season_id||v.ssid;
+      if(!ss) continue;
+      out.push({
+        kind:'pgc',
+        seasonId: ss,
+        title:(v.title||'').replace(/<[^>]+>/g,''),
+        pic: v.cover||'',
+        status:'番剧',
+        meta: v.index_show||v.order||'',   // “更新至x话”
+        views:'', year:'',
+        typeName: v.badge||''
+      });
+    }
+    return out;
+  }
+
+  async function fetchRank(rid){
+    var j = await req(API+'/x/web-interface/ranking/v2?rid='+(rid||0)+'&type=all', { responseType:'json' });
+    return { items: collectVideos(j&&j.data&&j.data.list), more:false };
+  }
+  async function fetchSearch(kw,page){
+    var j = await apiWbi('/x/web-interface/wbi/search/type', { search_type:'video', keyword:kw, page:page, page_size:20 });
+    return { items: collectVideos(j&&j.data&&j.data.result), more:(j&&j.data&&j.data.numResults>page*20) };
+  }
+  /* 各 tab 的二级筛选。直播用分区，热门用子榜，排行榜按分区已经在一级了。 */
+  var POP_SUBS = [
+    { id:'all',    name:'综合热门' },
+    { id:'weekly', name:'每周必看' },
+    { id:'history',name:'入站必刷' }
+  ];
+  var popSub = 'all';
+
+  var LIVE_AREAS = [
+    { id:0,   name:'全部' },
+    { id:2,   name:'网游' },
+    { id:3,   name:'手游' },
+    { id:6,   name:'单机' },
+    { id:1,   name:'娱乐' },
+    { id:5,   name:'电台' },
+    { id:10,  name:'生活' },
+    { id:11,  name:'知识' },
+    { id:13,  name:'赛事' },
+    { id:9,   name:'虚拟' }
+  ];
+  var liveArea = 0;
+
+  function collectLive(arr){
+    var out=[],i,v,room;
+    if(!arr) return out;
+    for(i=0;i<arr.length;i++){
+      v=arr[i];
+      room = v.roomid || v.room_id || v.roomId || 0;
+      if(!room) continue;
+      out.push({
+        kind:'live',
+        roomid: room,
+        title:(v.title||'').replace(/<[^>]+>/g,''),
+        author: v.uname || v.name || v.nickname || v.owner_name || '',
+        pic: v.cover || v.system_cover || v.user_cover || v.keyframe || v.face || '',
+        dur:'',
+        views: cnt(v.online || (v.watched_show && v.watched_show.num) || 0) + '人气',
+        live:true
+      });
+    }
+    return out;
+  }
+
+  async function fetchLive(page){
+    var list = null, j = null;
+
+    /* 全部分区：用推荐/热门接口。
+       指定分区：必须用 getList 且带 parent_area_id —— 而且不能再掉兜底，
+       否则兜底接口不认分区，每个分区都返回同一份全站列表（这就是"点了都一样"）。 */
+    if (liveArea === 0) {
+      try {
+        j = await req('https://api.live.bilibili.com/xlive/web-interface/v1/second/getList' +
+          '?platform=web&parent_area_id=0&area_id=0&sort_type=online&page=' + page,
+          { responseType: 'json' });
+        list = j && j.data && j.data.list;
+      } catch (e) {}
+
+      if (!list || !list.length) {
+        try {
+          j = await req('https://api.live.bilibili.com/room/v1/room/get_user_recommend?page=' + page + '&page_size=30',
+            { responseType: 'json' });
+          list = (j && j.data && j.data.list) || (j && j.data);
+        } catch (e) {}
+      }
+      return { items: collectLive(list), more: !!(list && list.length >= 20) };
+    }
+
+    // 指定分区
+    try {
+      j = await req('https://api.live.bilibili.com/xlive/web-interface/v1/second/getList' +
+        '?platform=web&parent_area_id=' + liveArea + '&area_id=0&sort_type=online&page=' + page,
+        { responseType: 'json' });
+      list = j && j.data && j.data.list;
+    } catch (e) {}
+
+    // 备用分区接口（老接口，按分区拉房间）
+    if (!list || !list.length) {
+      try {
+        j = await req('https://api.live.bilibili.com/room/v3/area/getRoomList' +
+          '?platform=web&parent_area_id=' + liveArea + '&area_id=0&sort_type=online' +
+          '&page=' + page + '&page_size=30',
+          { responseType: 'json' });
+        list = j && j.data && j.data.list;
+      } catch (e) {}
+    }
+
+    if (!list || !list.length) {
+      throw new Error('这个分区没拉到内容（' + ((j && j.message) || 'empty') + '）');
+    }
+
+    return { items: collectLive(list), more: list.length >= 20 };
+  }
+
+  async function fetchUp(mid,page){
+    var j = await apiWbi('/x/space/wbi/arc/search', { mid:mid, ps:25, pn:page, order:'pubdate', platform:'web' });
+    var list = j&&j.data&&j.data.list&&j.data.list.vlist;
+    return { items: collectVideos(list), more:(list&&list.length>=25) };
+  }
+
+  async function fetchPage(){
+    if(view.type==='rec')  return fetchRec(view.page);
+    if(view.type==='pop')  return fetchPop(view.page);
+    if(view.type==='rank') return fetchRank(view.rid);
+    if(view.type==='pgc')  return fetchPgc(view.season, view.page);
+    if(view.type==='search') return fetchSearch(view.kw, view.page);
+    if(view.type==='up')   return fetchUp(view.mid, view.page);
+    if(view.type==='live') return fetchLive(view.page);
+    return { items:[], more:false };
+  }
+
+  /* ---------- 渲染 ---------- */
+  function card(item){
+    var btn=document.createElement('button'); btn.className='card-inner'; btn.setAttribute('tabindex','0');
+    var thumb=document.createElement('div'); thumb.className='thumb';
+    var img=document.createElement('img'); img.alt=''; img.className='lazy'; img.setAttribute('data-src',item.pic); lazyWatch(img); thumb.appendChild(img);
+    if(item.live){ var lb=document.createElement('span'); lb.className='badge live'; lb.textContent='LIVE'; thumb.appendChild(lb); }
+    else if(item.kind==='pgc'){
+      if(item.typeName){ var pb=document.createElement('span'); pb.className='badge pgc'; pb.textContent=item.typeName; thumb.appendChild(pb); }
+      if(item.meta){ var mb=document.createElement('span'); mb.className='badge'; mb.textContent=item.meta; thumb.appendChild(mb); }
+    }
+    else if(item.dur){ var b=document.createElement('span'); b.className='badge'; b.textContent=item.dur; thumb.appendChild(b); }
+    var meta=document.createElement('div'); meta.className='meta';
+    var t=document.createElement('div'); t.className='title'; t.textContent=item.title||'(无标题)';
+    var sub=document.createElement('div'); sub.className='sub';
+    var parts=[]; if(item.author)parts.push(item.author); if(item.views)parts.push(item.views);
+    if(item.kind==='pgc'&&item.meta&&!item.author) parts.push(item.meta);
+    sub.textContent=parts.join(' · ');
+    meta.appendChild(t); meta.appendChild(sub);
+    btn.appendChild(thumb); btn.appendChild(meta);
+    btn.addEventListener('click',function(){ play(item); });
+    btn.addEventListener('contextmenu',function(e){ e.preventDefault(); if(item.mid) enterUp(item.mid, item.author); });
+    return btn;
+  }
+  function renderInto(box,items){ var f=document.createDocumentFragment(),i,w; for(i=0;i<items.length;i++){ w=document.createElement('div'); w.className='card'; w.appendChild(card(items[i])); f.appendChild(w); } box.appendChild(f); }
+  function showState(h){ elState.innerHTML=h; }
+  function clearState(){ elState.innerHTML=''; }
+
+  function skeleton(n){ var f=document.createDocumentFragment(),i,c,inner,th,me; for(i=0;i<n;i++){ c=document.createElement('div'); c.className='card'; inner=document.createElement('div'); inner.className='card-inner'; th=document.createElement('div'); th.className='thumb'; me=document.createElement('div'); me.className='meta'; me.innerHTML='<div class="bar"></div><div class="bar short"></div>'; inner.appendChild(th); inner.appendChild(me); c.appendChild(inner); f.appendChild(c); } return f; }
+  function moeEmpty(title, sub){
+    return '<div class="moe-empty"><svg viewBox="0 0 80 64" width="88" height="70" aria-hidden="true"><path d="M24 14 L16 6 M56 14 L64 6" stroke="#FB7299" stroke-width="3.5" stroke-linecap="round" fill="none"/><circle cx="16" cy="6" r="2.5" fill="#FB7299"/><circle cx="64" cy="6" r="2.5" fill="#FB7299"/><rect x="6" y="14" width="68" height="44" rx="15" fill="#FB7299"/><rect x="13" y="21" width="54" height="30" rx="10" fill="#1C1728"/><path d="M25 33 q4 5 8 0" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M47 33 q4 5 8 0" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/><ellipse cx="22" cy="42" rx="3" ry="1.8" fill="#FF9BB8" opacity=".85"/><ellipse cx="58" cy="42" rx="3" ry="1.8" fill="#FF9BB8" opacity=".85"/></svg><div class="moe-text">TITLE</div><div class="moe-sub">SUB</div></div>'.replace('TITLE', title||'空空的').replace('SUB', sub||'');
+  }
+  function loadingState(){ clearState(); elList.className='grid skel'; elList.replaceChildren(skeleton(12)); }
+  function endLoading(){ elList.className='grid'; }
+
+  async function load(reset){
+    var seq=++view.seq;
+    view.loading=true;
+    if(reset){ view.page=1; view.items=[]; view.more=true; lazyList=[]; if(lazyIO){lazyIO.disconnect();lazyIO=null;} elList.replaceChildren(); elMore.replaceChildren(); loadingState(); window.scrollTo(0,0); }
+    try{
+      var res=await Promise.race([ fetchPage(), new Promise(function(_,rej){ setTimeout(function(){rej(new Error('请求超时'));},25000); }) ]);
+      if(seq!==view.seq) return;
+      var items=res.items||[];
+      view.more=!!res.more;
+      netDot(true); endLoading();
+      if(reset) elList.replaceChildren();
+      if(!items.length && !view.items.length){ showState(moeEmpty('这里空空的…','换个关键词，或检查 Cookie / 代理')); }
+      else { clearState(); view.items=view.items.concat(items); renderInto(elList,items); }
+      renderMore();
+    }catch(e){
+      if(seq!==view.seq) return;
+      netDot(false); endLoading();
+      if(view.items.length) toast('加载失败：'+e.message);
+      else { elList.replaceChildren(); showState('<strong>没能连上 B 站</strong><div>'+String(e.message).replace(/</g,'&lt;')+'</div><div style="margin-top:8px">需要代理时请在 App 里配置。搜索/UP主需要 WBI 签名，失败多为网络问题。</div>'); }
+    }finally{ if(seq===view.seq) view.loading=false; }
+  }
+
+  function renderMore(){ elMore.replaceChildren(); if(!view.more)return; var b=document.createElement('button'); b.className='state act'; b.textContent='加载更多'; b.addEventListener('click',function(){ if(!view.loading){ view.page++; load(false);} }); elMore.appendChild(b); }
+  function autoPage(){ function near(){ if(view.loading||!view.more||!elMore.firstChild)return; var r=elMore.getBoundingClientRect(); if(r.top<window.innerHeight+500){ view.page++; load(false);} } window.addEventListener('scroll',function(){near();lazyScan();},{passive:true}); setInterval(function(){near();lazyScan();},1200); }
+
+  /* ---------- 播放：DASH 拼流 ---------- */
+  function biliMpd(dash, want, codecId){
+    var vs=dash.video||[], as=dash.audio||[], i, f;
+    var vids=[]; for(i=0;i<vs.length;i++){ f=vs[i]; vids.push({f:f,q:f.id,h:f.height||0,codec:f.codecid||7,bw:f.bandwidth||0}); }
+    var auds=[]; for(i=0;i<as.length;i++){ f=as[i]; auds.push({f:f,bw:f.bandwidth||0}); }
+    // 加上 dolby / flac 音轨
+    if(dash.dolby&&dash.dolby.audio) for(i=0;i<dash.dolby.audio.length;i++) auds.push({f:dash.dolby.audio[i],bw:dash.dolby.audio[i].bandwidth||0});
+    if(dash.flac&&dash.flac.audio) auds.push({f:dash.flac.audio,bw:dash.flac.audio.bandwidth||0});
+    if(!vids.length||!auds.length) throw new Error('没有可用的分离流');
+
+    var cap=+want||127;
+    // 先按编码筛，再按清晰度挑
+    var pref=vids.filter(function(x){return x.codec==(+codecId);});
+    if(!pref.length) pref=vids;
+    pref.sort(function(a,b){ if(b.q!==a.q)return b.q-a.q; return b.bw-a.bw; });
+    var v=pref[0];
+    for(i=0;i<pref.length;i++){ if(pref[i].q<=cap){ v=pref[i]; break; } }
+
+    auds.sort(function(a,b){return b.bw-a.bw;});
+    var a=auds[0];
+
+    function base(f){
+      // 把主地址和所有备用地址凑一起，优先选通用 upos CDN，
+      // 避开 mcdn / szbdyd / xy*（P2P、专线域名，代理环境下连不上 → 一直 0 KB/s）
+      var cands=[];
+      if(f.baseUrl) cands.push(f.baseUrl);
+      if(f.base_url) cands.push(f.base_url);
+      if(f.backupUrl) cands=cands.concat(f.backupUrl);
+      if(f.backup_url) cands=cands.concat(f.backup_url);
+      if(!cands.length) return '';
+      // B 站 PCDN / 专线域名，播放器内核直连不通 → 0 KB/s。全部避开。
+      // mcdn/szbdyd/mountaintoys/edge/xy* 都是这类，只有 upos-*.bilivideo.com 是通用 CDN。
+      function isPcdn(u){ return /mcdn\.|szbdyd\.|mountaintoys|\.mcdn|\/\/[^/]*\.edge\.|szext|\bxy\d/i.test(u); }
+      function isUpos(u){ return /upos-|\.bilivideo\.com/i.test(u) && !isPcdn(u); }
+      var upos=cands.filter(isUpos);
+      if(upos.length) return upos[0];
+      var good=cands.filter(function(u){ return !isPcdn(u); });
+      return (good[0]||cands[0]);
+    }
+    function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function seg(f){ var sb=f.SegmentBase||f.segment_base||{}; var idx=sb.indexRange||sb.index_range||'0-0'; var ini=sb.Initialization||sb.initialization||'0-0'; return '<SegmentBase indexRange="'+idx+'"><Initialization range="'+ini+'"/></SegmentBase>'; }
+    function rep(x,extra){ var f=x.f; return '<Representation id="'+f.id+'" bandwidth="'+(f.bandwidth||500000)+'" codecs="'+esc(f.codecs||'')+'" mimeType="'+esc((f.mimeType||f.mime_type||'').split(';')[0])+'"'+extra+'><BaseURL>'+esc(gwUrl(base(f)))+'</BaseURL>'+seg(f)+'</Representation>'; }
+
+    var vcodec=(v.f.mimeType||v.f.mime_type||'video/mp4').split(';')[0];
+    var acodec=(a.f.mimeType||a.f.mime_type||'audio/mp4').split(';')[0];
+    var mpd='<?xml version="1.0" encoding="UTF-8"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT'+(dash.duration||0)+'S" minBufferTime="PT1.5S" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011"><Period start="PT0S"><AdaptationSet mimeType="'+vcodec+'" segmentAlignment="true" startWithSAP="1">'+rep(v,' width="'+(v.f.width||0)+'" height="'+(v.f.height||0)+'"')+'</AdaptationSet><AdaptationSet mimeType="'+acodec+'" segmentAlignment="true" startWithSAP="1" lang="und">'+rep(a,'')+'</AdaptationSet></Period></MPD>';
+    return { xml: mpd, q: v.q, h: v.f.height||0 };
+  }
+
+  function gwOrigin(){
+    if(isNative()&&fm.res){ try{ var p=fm.res('https://example.com/probe.bin'); if(typeof p==='string'&&p.indexOf('/webResource')!==-1) return p.slice(0,p.indexOf('/webResource')); }catch(e){} }
+    if(location.protocol.indexOf('http')===0&&location.host) return location.origin;
+    return '';
+  }
+  function gwUrl(u){
+    // B 站 CDN 强制校验 Referer，分片必须走网关带头
+    var headers={ 'User-Agent':DEF_UA, Referer:'https://www.bilibili.com/' };
+    if(isNative()&&fm.res){ try{ var out=fm.res(u,{headers:headers}); if(typeof out==='string'&&out.indexOf('/webResource')!==-1) return out; }catch(e){} }
+    var o=gwOrigin();
+    if(o) return o+'/webResource?url='+encodeURIComponent(u)+'&headers='+encodeURIComponent(JSON.stringify(headers));
+    return u;
+  }
+
+  var inlineMap={}, lazyEps={}, warming={}, pgcEps=[], resolving=false;
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+  window.__fmWebHomeInlineResolver=async function(ep){
+    var name=(ep&&ep.name)||'';
+    var url=(ep&&ep.url)||'';
+
+    var hit=inlineMap[name];
+    if(hit) return {url:hit.url,format:hit.format,headers:hit.headers||{}};
+
+    // 番剧：从 url 里的索引取集（meep://N），不靠名字匹配
+    var it=null;
+    var m=String(url).match(/meep:\/\/(\d+)/);
+    if(m){ it=pgcEps[parseInt(m[1],10)]; }
+    if(it){
+      try{
+        var pd=await playInfo(it);
+        if(pd.dash){
+          var built=biliMpd(pd.dash, prefs.quality, prefs.codec);
+          var r={ url:'data:application/dash+xml;base64,'+btoa(unescape(encodeURIComponent(built.xml))), format:'application/dash+xml', headers:{} };
+          inlineMap[name]=r;
+          lastPlay={ kind:'resolver', got:built.h+'P', dbg:'cid='+it.cid+' aid='+it.aid, time:new Date().toLocaleTimeString() };
+          return r;
+        }
+        if(pd.durl){
+          var r2={ url:gwUrl(pd.durl), headers:{'User-Agent':DEF_UA,Referer:'https://www.bilibili.com/'} };
+          inlineMap[name]=r2; return r2;
+        }
+        toast('该集无可用流');
+      }catch(e){ toast('解析失败：'+(e&&e.message||e)); }
+    } else {
+      toast('找不到集：'+name);
+    }
+    return null;
+  };
+
+  /* 把某一集解析好塞进 inlineMap，供 resolver 同步取用 */
+  async function warmOne(it, name){
+    if(!it || warming[name] || inlineMap[name]) return;
+    warming[name]=1;
+    try{
+      var pd=await playInfo(it);
+      if(pd.dash){
+        var built=biliMpd(pd.dash, prefs.quality, prefs.codec);
+        inlineMap[name]={ url:'data:application/dash+xml;base64,'+btoa(unescape(encodeURIComponent(built.xml))), format:'application/dash+xml', headers:{} };
+      } else if(pd.durl){
+        inlineMap[name]={ url:gwUrl(pd.durl), headers:{'User-Agent':DEF_UA,Referer:'https://www.bilibili.com/'} };
+      }
+    }catch(e){}
+    delete warming[name];
+  }
+
+  function epName(v,i){
+    var n=String(i+1); if(n.length<2)n='0'+n;
+    var t=(v.title||'').replace(/[#$]/g,' ').replace(/\s+/g,' ').trim();   // # $ 会截断多集串
+    if(t.length>42)t=t.slice(0,42)+'…';
+    return t?(n+' '+t):n;
+  }
+
+  async function pushList(){
+    if(!native||!fm.vodInline){ toast('这个 App 版本不支持多集推送'); return; }
+    var vids=view.items.filter(function(x){return x.kind==='video';});
+    if(!vids.length){ toast('列表里没有可播的视频'); return; }
+    if(vids.length>200) vids=vids.slice(0,200);
+
+    lazyEps={}; inlineMap={};
+    var eps=vids.map(function(v,i){ var nm=epName(v,i); lazyEps[nm]=v; return { name:nm, url:'https://www.bilibili.com/video/'+(v.bvid||('av'+v.aid)), resolve:true }; });
+
+    // 先解析头一集，起播即高画质
+    try{ await warmOne(vids[0], eps[0].name); }catch(e){}
+
+    var cur=subStack.length?subStack[subStack.length-1]:null;
+    await fm.vodInline({
+      vod_id:'bililist_'+(vids[0].bvid||vids[0].aid||Date.now()),
+      vod_name:(cur&&cur.name)||'bilibili',
+      vod_pic:'',
+      vod_play_from:'最高画质',
+      mark:eps[0].name,
+      episodes:eps
+    });
+    toast('已推送 '+eps.length+' 集');
+
+    // 后台把前几集也热上
+    (async function(){ for(var i=1;i<Math.min(eps.length,6);i++){ await warmOne(vids[i],eps[i].name); } })();
+  }
+
+  var playing=false, lastPlay=null, liveDbg='';
+  async function play(item){
+    if(playing)return; playing=true;
+    var step='开始';
+    try{
+      if(item.kind==='live'){ await playLive(item); playing=false; return; }
+      if(item.kind==='pgc'){ await playPgc(item); playing=false; return; }
+
+      step='取 playInfo';
+      var pd = await playInfo(item);
+
+      if(pd.dash){
+        step='拼 MPD';
+        var built=biliMpd(pd.dash, prefs.quality, prefs.codec);
+        inlineMap={};
+        var name=(built.h||'')+'P';
+        var uri='data:application/dash+xml;base64,'+btoa(unescape(encodeURIComponent(built.xml)));
+        inlineMap[name]={ url:uri, format:'application/dash+xml', headers:{} };
+
+        lastPlay={ kind:'dash', got:name, q:built.q, mpdKB:Math.round(uri.length/1024), via:(native&&fm.vodInline)?'vodInline':'fm.play', time:new Date().toLocaleTimeString() };
+
+        step='推给播放器';
+        if(native&&fm.vodInline){
+          var art=resUrl(item.pic||'', 1280, 720), wp=wallOf(item);
+          await fm.vodInline({ vod_id:'bili_'+item.bvid, vod_name:item.title||'bilibili', vod_pic:art, wallPic:wp, vod_play_from:'最高画质', mark:name, episodes:[{name:name,url:uri,resolve:true,pageUrl:'https://www.bilibili.com/video/'+item.bvid}] });
+        } else if(native&&fm.play){
+          var artP=resUrl(item.pic||'', 1280, 720); await fm.play(uri, item.title||'bilibili', { pic:artP, wallPic:wallOf(item) });
+        } else { window.open('https://www.bilibili.com/video/'+item.bvid,'_blank'); }
+        toast(name+(pd.needVip?'（大会员）':'')+(pd.needLogin&&!prefs.cookie?'（未登录受限）':''));
+      } else if(pd.durl){
+        step='整合流';
+        lastPlay={ kind:'durl', got:'低清', time:new Date().toLocaleTimeString() };
+        if(native&&fm.play){ var artD=resUrl(item.pic||'', 1280, 720); await fm.play(gwUrl(pd.durl), item.title||'bilibili', { pic:artD, wallPic:wallOf(item), headers:{'User-Agent':DEF_UA,Referer:'https://www.bilibili.com/'} }); }
+        toast('整合流（低清）');
+      } else {
+        toast('拿不到播放地址');
+      }
+    }catch(e){
+      lastPlay={ kind:'错误', step:step, msg:e.message, time:new Date().toLocaleTimeString() };
+      toast('['+step+'] '+e.message);
+    }
+    playing=false;
+  }
+
+  async function playLive(item){
+    var step='取直播流';
+    try{
+      var LIVE='https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo';
+      function liveUrl(qn){ return LIVE+'?room_id='+item.roomid+'&protocol=0,1&format=0,1,2&codec=0,1&qn='+qn+'&platform=web'; }
+
+      function readQn(dd){
+        // 返回 { cur, accept[] }
+        var cur=0, acc=[];
+        var st=dd&&dd.playurl_info&&dd.playurl_info.playurl&&dd.playurl_info.playurl.stream;
+        if(st) for(var a=0;a<st.length;a++){ var fs=st[a].format||[]; for(var b=0;b<fs.length;b++){ var cs=fs[b].codec||[]; for(var e=0;e<cs.length;e++){ if(cs[e].current_qn&&!cur)cur=cs[e].current_qn; var aq=cs[e].accept_qn||[]; for(var f=0;f<aq.length;f++) if(acc.indexOf(aq[f])<0) acc.push(aq[f]); } } }
+        return { cur:cur, accept:acc };
+      }
+
+      var dbg=[];
+      var j = await req(liveUrl(10000), { responseType:'json' });
+      var d = j&&j.data;
+      if(!d) throw new Error((j&&j.message)||'no data');
+      if(d.live_status!==undefined && d.live_status!==1){ toast('主播没在播'); return; }
+
+      var q1=readQn(d);
+      dbg.push('第1次 qn=10000 → 拿到 '+q1.cur+'，可选 ['+q1.accept.join(',')+']');
+
+      // 可选档里挑最高，只要比当前高就重取。空列表就直接再要一次原画。
+      var want = 0;
+      for(var z=0;z<q1.accept.length;z++) if(q1.accept[z]>want) want=q1.accept[z];
+      if(!want) want=10000;
+
+      if(want>q1.cur){
+        try{
+          var j2=await req(liveUrl(want), {responseType:'json'});
+          if(j2&&j2.data&&j2.data.playurl_info){ d=j2.data; var q2=readQn(d); dbg.push('第2次 qn='+want+' → 拿到 '+q2.cur); }
+          else dbg.push('第2次 qn='+want+' → 无 playurl_info');
+        }catch(e){ dbg.push('第2次失败：'+e.message); }
+      } else {
+        dbg.push('已是最高，不重取');
+      }
+
+      liveDbg=dbg.join(' | ');
+
+      var streams = d.playurl_info && d.playurl_info.playurl && d.playurl_info.playurl.stream;
+      if(!streams || !streams.length) throw new Error('无 stream（live_status='+d.live_status+'）');
+
+      var hls='', flv='', i,k,m, foundFmt=[];
+      for(i=0;i<streams.length;i++){
+        var proto=streams[i].protocol_name||'';
+        var fmts=streams[i].format||[];
+        for(k=0;k<fmts.length;k++){
+          var fmt=fmts[k], fn=fmt.format_name||'';
+          var codecs=fmt.codec||[];
+          for(m=0;m<codecs.length;m++){
+            var c=codecs[m];
+            var hostArr=c.url_info||[];
+            if(!hostArr.length) continue;
+            var h=hostArr[0];
+            var full=h.host + (c.base_url||'') + (h.extra||'');
+            foundFmt.push(proto+'/'+fn);
+            if((fn==='fmp4'||fn==='ts') && !hls) hls=full;
+            else if(fn==='flv' && !flv) flv=full;
+          }
+        }
+      }
+
+      var pick = hls || flv;
+      if(!pick) throw new Error('拿到流但没有可用地址：'+foundFmt.join(','));
+      var isHls = (pick===hls);
+
+      step='起播';
+
+      /* 直播地址不能走 /webResource 网关：
+         一进网关地址就变成 127.0.0.1:9978/webResource?url=…，结尾不再是 .m3u8，
+         播放器猜不出封装格式 → "Container Unsupported"。
+         直播流的鉴权签名写在 URL 参数里，本来也不需要 Referer，直接推原地址。
+         再用 vodInline 的 resolver 显式声明 format，播放器不靠猜。 */
+      if(native && fm.vodInline){
+        inlineMap={};
+        var epn = isHls ? 'HLS' : 'FLV';
+        inlineMap[epn] = isHls
+          ? { url:pick, format:'application/x-mpegURL', headers:{} }
+          : { url:pick, headers:{ 'User-Agent':DEF_UA, Referer:'https://live.bilibili.com/' } };
+
+        await fm.vodInline({
+          vod_id:'bililive_'+item.roomid,
+          vod_name:item.title||'直播',
+          vod_pic:'',
+          vod_play_from:'直播',
+          mark:epn,
+          episodes:[{ name:epn, url:pick }]
+        });
+      } else if(native && fm.play){
+        await fm.play(pick, item.title||'直播', {});
+      } else {
+        window.open('https://live.bilibili.com/'+item.roomid,'_blank');
+      }
+
+      var qnName={30000:'杜比',20000:'4K',10000:'原画',400:'蓝光',250:'超清',150:'高清',80:'流畅'};
+      var usedQn=0;
+      if(streams[0]&&streams[0].format&&streams[0].format[0]&&streams[0].format[0].codec&&streams[0].format[0].codec[0]) usedQn=streams[0].format[0].codec[0].current_qn||0;
+      lastPlay={ kind:'live', got:(qnName[usedQn]||('qn'+usedQn)), dbg:liveDbg, time:new Date().toLocaleTimeString() };
+      toast('直播 · '+(qnName[usedQn]||('qn'+usedQn))+' · '+(isHls?'HLS':'FLV'));
+    }catch(e){
+      toast('直播['+step+'] '+e.message);
+    }
+  }
+
+  async function playPgc(item){
+    // 番剧/影视：先取剧集详情，拿正片第一集的 aid+cid，转成普通视频播放
+    var j = await req('https://api.bilibili.com/pgc/view/web/season?season_id='+item.seasonId, { responseType:'json' });
+    var eps = j&&j.result&&j.result.episodes;
+    if(!eps||!eps.length) throw new Error('拿不到剧集');
+    var ep = eps[0];
+    var vitem = { kind:'video', aid:ep.aid, bvid:ep.bvid||'', cid:ep.cid, epId:ep.id, _dur:(ep.duration?Math.round(ep.duration/1000):0), title:item.title+' '+(ep.title||ep.long_title||''), pic:item.pic };
+    // 有多集就整季推送成多集；单集（电影）直接解析起播
+    if(eps.length>1 && native && fm.vodInline){
+      await pgcInline(item, eps);
+    } else {
+      // 注意：不能调 play()，此刻 playing 已是 true 会被挡；直接解析
+      var pd = await playInfo(vitem);
+      if(pd.dash){
+        var built = biliMpd(pd.dash, prefs.quality, prefs.codec);
+        var uri='data:application/dash+xml;base64,'+btoa(unescape(encodeURIComponent(built.xml)));
+        var art=resUrl(item.pic||''), wp=wallOf(item);
+        inlineMap={}; window.__fmWebHomeInlineResolver=function(ep2){ return {url:uri,format:'application/dash+xml',headers:{}}; };
+        await fm.vodInline({ vod_id:'pgc1_'+item.seasonId, vod_name:vitem.title, vod_pic:art, wallPic:wp, vod_play_from:'最高画质', mark:built.h+'P', episodes:[{name:built.h+'P',url:uri,resolve:true}] });
+        toast(built.h+'P');
+      } else if(pd.durl){
+        var artD=resUrl(item.pic||'');
+        await fm.play(gwUrl(pd.durl), vitem.title, { pic:artD, wallPic:wallOf(item), headers:{'User-Agent':DEF_UA,Referer:'https://www.bilibili.com/'} });
+      } else { throw new Error('无可用流'); }
+    }
+  }
+
+  async function pgcInline(item, eps){
+    lazyEps={}; inlineMap={}; pgcEps=[];
+    var list=eps.map(function(ep,i){
+      var nm=(ep.title||String(i+1))+(ep.long_title?(' '+ep.long_title):'');
+      nm=nm.replace(/[#$]/g,' ').slice(0,42);
+      pgcEps[i]={ kind:'video', aid:ep.aid, bvid:ep.bvid||'', cid:ep.cid, _dur:(ep.duration?Math.round(ep.duration/1000):0), title:nm, pic:item.pic, epId:ep.id };
+      // url 里塞索引，resolver 从 url 反查，不靠名字
+      return { name:nm, url:'meep://'+i, resolve:true };
+    });
+    var art=resUrl(item.pic||'', 1280, 720);
+    await fm.vodInline({ vod_id:'pgc_'+item.seasonId, vod_name:item.title, vod_pic:art, wallPic:(prefs.wall==='pic'?art:''), vod_play_from:'番剧', mark:list[0].name, episodes:list });
+    toast('已推送 '+list.length+' 集');
+  }
+
+  async function playInfo(item){
+    if(!item.bvid && !item.aid && !item.epId) throw new Error('缺标识');
+    var cid=item.cid;
+    if(!cid){
+      var key=item.bvid?('bvid='+item.bvid):('aid='+item.aid);
+      var vj=await req(API+'/x/web-interface/view?'+key, {responseType:'json'});
+      cid=vj&&vj.data&&vj.data.cid;
+      if(vj&&vj.data){ item._dur=vj.data.duration; if(!item.bvid&&vj.data.bvid) item.bvid=vj.data.bvid; }
+    }
+    if(!cid) throw new Error('拿不到 cid');
+
+    var p={ cid:cid, qn:prefs.quality, fnval:4048, fnver:0, fourk:1 };
+    if(item.bvid) p.bvid=item.bvid; else p.avid=item.aid;
+    var j=await apiWbi('/x/player/wbi/playurl', p);
+    var d=j&&j.data;
+    if(!d){ throw new Error((j&&j.message)||'playurl 失败'); }
+    if(d.dash&&!d.dash.duration&&item._dur) d.dash.duration=item._dur;
+    return { dash:d.dash, durl:(d.durl&&d.durl[0]&&d.durl[0].url), needLogin:(prefs.quality>=80), needVip:(prefs.quality>=112) };
+  }
+
+  /* ---------- UP 主页 ---------- */
+  function enterUp(mid, name){
+    subStack.push({mid:mid,name:name||'UP主'});
+    $('subbar').className='subbar on'; elTabs.className='tabs off';
+    $('subName').textContent=name||'UP主'; $('subDesc').textContent='TA 的投稿';
+    history.pushState({sub:subStack.length},'','#up'+mid);
+    view.type='up'; view.mid=mid; view.tab=''; load(true);
+  }
+  function exitSub(silent){
+    subStack.pop();
+    if(!subStack.length){ $('subbar').className='subbar'; elTabs.className='tabs'; var t=TABS[0]; view.type=t.type; view.tab=t.id; view.rid=t.rid||0; view.season=t.season||0; renderTabs(); load(true); }
+    if(!silent&&history.state&&history.state.sub) history.back();
+  }
+  window.addEventListener('popstate',function(){ var st=history.state; if(openName){ closeSheet(true); return; } if(subStack.length){ exitSub(true); } });
+
+  /* ---------- 浮层 ---------- */
+  var sheets={ settings:$('settings'), net:$('net') }, openName='';
+  function openSheet(n,silent){ var k; for(k in sheets) sheets[k].className='sheet'; sheets[n].className='sheet open'; sheets[n].scrollTop=0; bodyClass('locked',true); openName=n; if(!silent) history.pushState({sheet:n},'','#'+n); }
+  function closeSheet(silent){ var k; for(k in sheets) sheets[k].className='sheet'; bodyClass('locked',false); openName=''; if(!silent&&history.state&&history.state.sheet) history.back(); }
+
+  /* ---------- tabs ---------- */
+  function scrollTabIntoView(){
+    var on=elTabs.querySelector('.tab.on'); if(!on)return;
+    var left=on.offsetLeft-(elTabs.clientWidth-on.offsetWidth)/2;
+    if(elTabs.scrollTo) elTabs.scrollTo({left:left,behavior:'smooth'}); else elTabs.scrollLeft=left;
+  }
+  function renderTabs(){ elTabs.replaceChildren(); TABS.forEach(function(t){ var b=document.createElement('button'); b.className='tab'+(t.id===view.tab?' on':''); b.textContent=t.name; b.addEventListener('click',function(){ clearSearchBox(); view.tab=t.id; view.type=t.type; view.rid=t.rid||0; view.season=t.season||0; renderTabs(); scrollTabIntoView(); renderLiveAreas(); load(true); }); elTabs.appendChild(b); }); renderLiveAreas(); scrollTabIntoView(); }
+
+  /* 二级筛选栏：直播用分区，热门用子榜，其他 tab 不显示 */
+  function renderLiveAreas(){
+    var bar=$('liveAreas');
+    if(!bar) return;
+    bar.replaceChildren();
+
+    var opts=null, cur=null, pick=null;
+    if(view.type==='live'){
+      opts=LIVE_AREAS; cur=liveArea;
+      pick=function(id){ liveArea=id; };
+    } else if(view.type==='pop'){
+      opts=POP_SUBS; cur=popSub;
+      pick=function(id){ popSub=id; };
+    } else {
+      bar.className='liveareas';
+      return;
+    }
+
+    opts.forEach(function(a){
+      var b=document.createElement('button');
+      b.className='larea'+(a.id===cur?' on':'');
+      b.textContent=a.name;
+      b.addEventListener('click',function(){
+        if(a.id===cur) return;
+        pick(a.id);
+        renderLiveAreas();
+        view.page=1; view.items=[];
+        load(true);
+      });
+      bar.appendChild(b);
+    });
+    bar.className='liveareas on';
+  }
+
+  function doSearch(){ var q=getVal('q').trim(); if(!q)return; closeSug(); pushHistory(q); view.tab=''; view.type='search'; view.kw=q; load(true); if(document.activeElement&&document.activeElement.blur) document.activeElement.blur(); bodyClass('searching',false); }
+
+  /* ---------- 搜索历史 + 联想 ---------- */
+  var history_=[], elSug=$('sug'), sugTimer=0, sugSeq=0, sugItems=[], sugIdx=-1;
+  var ICON_SEARCH='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M16.5 16.5 L21 21"></path></svg>';
+  var ICON_HIST='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 4v4h4"></path><path d="M12 8v4l3 2"></path></svg>';
+  async function loadHistory(){ try{ var r=await store.get('history'); history_=r?JSON.parse(r):[]; }catch(e){ history_=[]; } }
+  async function pushHistory(q){ q=String(q).trim(); if(!q)return; history_=history_.filter(function(x){return x!==q;}); history_.unshift(q); if(history_.length>12) history_=history_.slice(0,12); try{ await store.set('history',JSON.stringify(history_)); }catch(e){} }
+  async function delHistory(q){ history_=history_.filter(function(x){return x!==q;}); try{ await store.set('history',JSON.stringify(history_)); }catch(e){} }
+  function closeSug(){ elSug.className='sug'; elSug.replaceChildren(); sugItems=[]; sugIdx=-1; }
+  function renderSug(list,isH){ if(!list.length){closeSug();return;} sugItems=list; sugIdx=-1; elSug.replaceChildren(); list.forEach(function(w){ var row=document.createElement('div'); row.className='sug-row'; var b=document.createElement('button'); b.type='button'; b.className='sug-hit'; b.innerHTML='<span class="k">'+(isH?ICON_HIST:ICON_SEARCH)+'</span>'; b.appendChild(document.createTextNode(w)); b.addEventListener('click',function(){ setVal('q',w); syncClear(); closeSug(); doSearch(); }); row.appendChild(b); if(isH){ var x=document.createElement('button'); x.type='button'; x.className='sug-del'; x.textContent='×'; x.addEventListener('click',function(e){ e.stopPropagation(); delHistory(w).then(function(){ if(history_.length)renderSug(history_,true); else closeSug(); }); }); row.appendChild(x); } elSug.appendChild(row); }); elSug.className='sug open'; }
+  function showHistory(){ if(getVal('q').trim())return; if(!history_.length){closeSug();return;} renderSug(history_,true); }
+  async function fetchSuggest(q){
+    var txt=await req('https://s.search.bilibili.com/main/suggest?term='+encodeURIComponent(q),{responseType:'json',timeout:8});
+    var out=[]; var r=txt&&txt.result&&txt.result.tag; if(r){ for(var i=0;i<r.length&&out.length<8;i++){ if(r[i]&&r[i].value) out.push(String(r[i].value)); } }
+    return out;
+  }
+  function syncClear(){ var c=$('clrBtn'); if(c) c.className=getVal('q')?'clr on':'clr'; }
+  function onType(){ var q=getVal('q').trim(); syncClear(); clearTimeout(sugTimer); if(!q){ showHistory(); return; } sugTimer=setTimeout(async function(){ var seq=++sugSeq; try{ var l=await fetchSuggest(q); if(seq===sugSeq&&getVal('q').trim()) renderSug(l,false); }catch(e){ closeSug(); } },220); }
+  function sugKey(e){ var key=e.key||'',code=e.keyCode||0,open=elSug.className.indexOf('open')!==-1; if((key==='Escape'||code===27)&&open){closeSug();return true;} if(!open||!sugItems.length)return false; var nodes=elSug.querySelectorAll('.sug-row'); if(key==='ArrowDown'||code===40){sugIdx=(sugIdx+1)%sugItems.length;} else if(key==='ArrowUp'||code===38){sugIdx=(sugIdx<=0?sugItems.length:sugIdx)-1;} else if((key==='Enter'||code===13)&&sugIdx>=0){ setVal('q',sugItems[sugIdx]); syncClear(); closeSug(); doSearch(); return true; } else return false; var i; for(i=0;i<nodes.length;i++) nodes[i].className=(i===sugIdx)?'sug-row on':'sug-row'; e.preventDefault(); return true; }
+
+  /* ---------- 自绘下拉 ----------
+     原生 select 在 WebView 弹的是系统对话框（白底黑字），CSS 改不动。
+     所以：select 元素留在 DOM 里（隐藏），只接管它的交互 —— 
+     值的读写还是走 select，getVal/setVal 一行都不用改。 */
+  var optCur = null;
+
+  function pickerLabel(sel){
+    var o = sel.options[sel.selectedIndex];
+    return o ? o.textContent : '';
+  }
+
+  function buildPickers(){
+    var sels = document.querySelectorAll('.field select');
+    Array.prototype.forEach.call(sels, function(sel){
+      if(sel._picked) return;
+      sel._picked = true;
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'picker';
+      btn.textContent = pickerLabel(sel);
+      sel.parentNode.insertBefore(btn, sel);
+
+      sel._btn = btn;
+      btn.addEventListener('click', function(){ openPicker(sel); });
+    });
+  }
+
+  function syncPickers(){
+    var sels = document.querySelectorAll('.field select');
+    Array.prototype.forEach.call(sels, function(sel){
+      if(sel._btn) sel._btn.textContent = pickerLabel(sel);
+    });
+  }
+
+  function openPicker(sel){
+    optCur = sel;
+    var lab = sel.parentNode.querySelector('label');
+    $('optTitle').textContent = lab ? lab.textContent : '选择';
+
+    var list = $('optList');
+    list.replaceChildren();
+
+    Array.prototype.forEach.call(sel.options, function(o, i){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'opt-item' + (i === sel.selectedIndex ? ' on' : '');
+      b.textContent = o.textContent;
+      b.addEventListener('click', function(){
+        sel.selectedIndex = i;
+        if(sel._btn) sel._btn.textContent = o.textContent;
+        closePicker();
+      });
+      list.appendChild(b);
+    });
+
+    $('optMask').className = 'opt-mask on';
+    $('optSheet').className = 'opt-sheet on';
+  }
+
+  function closePicker(){
+    $('optMask').className = 'opt-mask';
+    $('optSheet').className = 'opt-sheet';
+    optCur = null;
+  }
+
+  /* ---------- 设置 ---------- */
+  async function loadPrefs(){
+    var r=await store.get('prefs');
+    if(r){ try{ var p=JSON.parse(r); if(p.cookie)prefs.cookie=p.cookie; if(p.quality)prefs.quality=p.quality; if(p.codec)prefs.codec=p.codec; if(p.wall)prefs.wall=p.wall; }catch(e){} }
+    setVal('cookie',prefs.cookie); setVal('quality',prefs.quality); setVal('codec',prefs.codec); setVal('wall',prefs.wall);
+    buildPickers();      // select 已藏起来，这里生成自绘触发器
+    syncPickers();       // 触发器文案跟上当前值
+    refreshLogin();
+  }
+  async function savePrefs(){
+    prefs.cookie=getVal('cookie').trim();
+    prefs.quality=getVal('quality')||'80';
+    prefs.codec=getVal('codec')||'7';
+    prefs.wall=getVal('wall')||'pic';
+    await store.set('prefs',JSON.stringify({cookie:prefs.cookie,quality:prefs.quality,codec:prefs.codec,wall:prefs.wall}));
+    syncPickers();
+    toast('已保存'); closeSheet(); refreshLogin(); load(true);
+  }
+  async function refreshLogin(){
+    var box=$('loginBox'); if(!box)return;
+    if(!prefs.cookie){ box.textContent='未登录 · 画质上限 480P'; box.className='login'; return; }
+    try{
+      var j=await req(API+'/x/web-interface/nav',{responseType:'json',timeout:10});
+      if(j&&j.data&&j.data.isLogin){ box.textContent='已登录：'+(j.data.uname||'')+(j.data.vipStatus?' · 大会员':''); box.className='login ok'; }
+      else{ box.textContent='Cookie 无效或已过期'; box.className='login bad'; }
+    }catch(e){ box.textContent='校验失败：'+e.message; box.className='login bad'; }
+  }
+
+  /* ---------- 自检 ---------- */
+  function diagLine(n,note){ var el=document.createElement('div'); el.className='diag-line'; el.innerHTML='<b>'+n+'</b> · <span>检测中…</span><div style="margin-top:4px">'+note+'</div>'; return el; }
+  async function probe(el,fn){ var t0=Date.now(); try{ await fn(); el.querySelector('span').innerHTML='<span class="ok">通过 · '+(Date.now()-t0)+'ms</span>'; }catch(e){ el.querySelector('span').innerHTML='<span class="bad">失败 · '+String(e.message).slice(0,60)+'</span>'; } }
+  async function runDiag(){
+    var box=$('diag'); box.replaceChildren();
+    var a=diagLine('接口 api.bilibili.com','列表/搜索走这里'); var b=diagLine('WBI 签名','搜索/UP主/播放地址都要它'); var c=diagLine('登录态','Cookie 有没有生效'); var d=diagLine('播放地址','能不能拿到 DASH 流');
+    box.appendChild(a);box.appendChild(b);box.appendChild(c);box.appendChild(d);
+    await probe(a,async function(){ var j=await req(API+'/x/web-interface/popular?ps=1&pn=1',{responseType:'json'}); if(!j||j.code!==0)throw new Error((j&&j.message)||'空'); });
+    await probe(b,async function(){ var j=await apiWbi('/x/web-interface/wbi/search/type',{search_type:'video',keyword:'test',page:1}); if(!j||j.code!==0)throw new Error((j&&j.message)||('code '+(j&&j.code))); });
+    await probe(c,async function(){ if(!prefs.cookie)throw new Error('未填 Cookie'); var j=await req(API+'/x/web-interface/nav',{responseType:'json'}); if(!(j&&j.data&&j.data.isLogin))throw new Error('未登录'); c.querySelector('div').innerHTML='已登录：'+(j.data.uname||'')+(j.data.vipStatus?' · 大会员':''); });
+    await probe(d,async function(){
+      var pj=await req(API+'/x/web-interface/popular?ps=1&pn=1',{responseType:'json'});
+      var it=toItem(pj.data.list[0]);
+      var info=await playInfo(it);
+      if(!info.dash&&!info.durl)throw new Error('没拿到流');
+      var detail='';
+      if(info.dash){
+        var b=biliMpd(info.dash,prefs.quality,prefs.codec);
+        detail='DASH '+b.h+'P · MPD '+Math.round(('data:application/dash+xml;base64,'+btoa(unescape(encodeURIComponent(b.xml)))).length/1024)+'KB';
+        // 探一下第一个分片能不能带 Referer 取到
+        var vf=info.dash.video&&info.dash.video[0];
+        var vurl='';
+        if(vf){ var cc=[]; if(vf.baseUrl)cc.push(vf.baseUrl); if(vf.base_url)cc.push(vf.base_url); if(vf.backupUrl)cc=cc.concat(vf.backupUrl); if(vf.backup_url)cc=cc.concat(vf.backup_url); function _pcdn(u){return /mcdn\.|szbdyd\.|mountaintoys|\.edge\.|szext|\bxy\d/i.test(u);} function _upos(u){return /upos-|\.bilivideo\.com/i.test(u)&&!_pcdn(u);} var g=cc.filter(_upos); if(!g.length) g=cc.filter(function(u){return !_pcdn(u);}); vurl=g[0]||cc[0]||''; }
+        if(vurl){
+          detail+='<br><span style="opacity:.6;word-break:break-all">'+vurl.slice(0,70)+'…</span>';
+          try{ var rr=await req(vurl,{headers:{Range:'bytes=0-100',Referer:'https://www.bilibili.com/'},timeout:12}); detail+='<br>分片：<b class=ok>取到 '+String(rr).length+' 字节</b>'; }
+          catch(pe){ detail+='<br>分片：<span class="bad">'+String(pe.message).slice(0,40)+'</span>'; }
+        }
+      } else detail='仅低清整合流';
+      d.querySelector('div').innerHTML=detail;
+    });
+
+    if(lastPlay){
+      var f=document.createElement('div'); f.className='diag-line';
+      f.innerHTML='<b>上次播放</b> · '+lastPlay.time+'<div style="margin-top:4px">'+
+        (lastPlay.kind==='错误'
+          ? '<span class="bad">['+lastPlay.step+'] '+lastPlay.msg+'</span>'
+          : '类型 '+lastPlay.kind+' · '+lastPlay.got+(lastPlay.mpdKB?(' · MPD '+lastPlay.mpdKB+'KB'):'')+(lastPlay.via?(' · '+lastPlay.via):'')+
+            (lastPlay.dbg?('<br><span style="opacity:.7">'+lastPlay.dbg+'</span>'):''))+'</div>';
+      box.appendChild(f);
+    }
+  }
+
+  /* ---------- 手势（左右切 tab + 下拉刷新，复用 YT 那套精简版） ---------- */
+  function tabIndex(){ var i; for(i=0;i<TABS.length;i++) if(TABS[i].id===view.tab)return i; return -1; }
+  function clearSearchBox(){ setVal('q',''); if(typeof syncClear==='function') syncClear(); closeSug(); }
+  function gotoTab(dir){ var idx=tabIndex(); if(idx===-1)idx=0; var n=idx+dir; if(n<0||n>=TABS.length)return; var t=TABS[n]; clearSearchBox(); view.tab=t.id; view.type=t.type; view.rid=t.rid||0; view.season=t.season||0; renderTabs(); scrollTabIntoView(); load(true); }
+
+  var PULL_MAX=110, PULL_FIRE=68, pullY=0;
+  var elWrap=$('wrap'), elPullSpin=$('pullSpin');
+
+  function setPull(y){ pullY=y; elWrap.style.transform=y?('translateY('+y+'px)'):''; elPullSpin.style.opacity=String(Math.min(y/PULL_FIRE,1)); elPullSpin.style.transform='translateY('+(y*0.6-40)+'px) rotate('+(y*3)+'deg)'; elPullSpin.className='pull-spin'+(y>=PULL_FIRE?' ready':''); }
+  function endPull(){ elWrap.className='wrap snap'; elWrap.style.transform=''; elPullSpin.className='pull-spin'; elPullSpin.style.opacity='0'; elPullSpin.style.transform='translateY(-40px)'; pullY=0; setTimeout(function(){elWrap.className='wrap';},460); }
+  function releasePull(refresh){ elWrap.className='wrap snap'; if(!refresh){endPull();return;} elWrap.style.transform='translateY(56px)'; elPullSpin.className='pull-spin spin'; elPullSpin.style.opacity='1'; elPullSpin.style.transform='translateY(-6px)'; load(true).then(endPull,endPull); }
+
+  function tabIndex2(){ var i; for(i=0;i<TABS.length;i++) if(TABS[i].id===view.tab)return i; return -1; }
+
+  function initGestures(){
+    var sx=0,sy=0,ax='',touching=false,swipeX=0;
+
+    document.addEventListener('touchstart',function(e){
+      if(openName||e.touches.length>1){ax='no';return;}
+      if(hasBodyClass('searching')){ax='no';return;}
+      var t=e.target;
+      // .liveareas 自己要横向滚动，手势层不能抢：抢了就得 preventDefault，原生滚动直接没了
+      if(t&&t.closest&&t.closest('.tabs,.liveareas,.sug,.subbar,.sheet')){ax='no';return;}
+      sx=e.touches[0].clientX; sy=e.touches[0].clientY; ax=''; touching=true; swipeX=0;
+      elWrap.className='wrap';
+    },{passive:true});
+
+    document.addEventListener('touchmove',function(e){
+      if(!touching||ax==='no')return;
+      var dx=e.touches[0].clientX-sx, dy=e.touches[0].clientY-sy;
+      if(!ax){
+        var adx=Math.abs(dx),ady=Math.abs(dy);
+        if(adx<6&&ady<6)return;
+        if(adx>ady*1.05){ ax = subStack.length ? 'no' : 'x'; }   // UP主页没 tab 可切
+        else if(dy>0&&window.pageYOffset<=0&&ady>adx*1.5){ ax='y'; }
+        else if(ady>adx*1.5){ ax='no'; return; }
+        else return;
+      }
+      if(ax==='x'){
+        var idx=tabIndex2();
+        var edge=(dx>0&&idx<=0)||(dx<0&&idx>=TABS.length-1);
+        swipeX = edge ? dx*0.28 : dx*0.85;
+        elWrap.style.transform='translateX('+swipeX+'px)';
+        elWrap.style.opacity=String(1-Math.min(Math.abs(swipeX)/400,0.35));
+        if(e.cancelable)e.preventDefault();
+        return;
+      }
+      if(ax==='y'){
+        if(dy<=0||window.pageYOffset>0){ if(pullY)setPull(0); ax='no'; return; }
+        setPull(PULL_MAX*(1-Math.exp(-dy/(PULL_MAX*1.1))));
+        if(e.cancelable)e.preventDefault();
+      }
+    },{passive:false});
+
+    function done(){
+      if(!touching)return; touching=false;
+      if(ax==='x'){
+        elWrap.className='wrap snap'; elWrap.style.transform=''; elWrap.style.opacity='';
+        setTimeout(function(){elWrap.className='wrap';},420);
+        if(Math.abs(swipeX)>=56) gotoTab(swipeX<0?1:-1);
+      } else if(ax==='y'){
+        releasePull(pullY>=PULL_FIRE);
+      }
+      ax='';
+    }
+    document.addEventListener('touchend',done);
+    document.addEventListener('touchcancel',done);
+  }
+
+  /* ---------- 绑定 + 启动 ---------- */  /* ---------- 绑定 + 启动 ---------- */
+  function bind(){
+    on('goBtn','click',doSearch);
+    on('q','input',onType);
+    on('q','focus',function(){ bodyClass('searching',true); showHistory(); });
+    on('q','keydown',function(e){ if(sugKey(e))return; if(e.key==='Enter'||e.keyCode===13)doSearch(); });
+    on('q','blur',function(){ setTimeout(closeSug,160); });
+    on('clrBtn','click',function(){ setVal('q',''); syncClear(); showHistory(); var q=$('q'); if(q&&q.focus)q.focus(); });
+    on('setBtn','click',function(){ openSheet('settings'); });
+    on('netBtn','click',function(){ openSheet('net'); runDiag(); });
+    on('setBack','click',function(){ closeSheet(); });
+    on('netBack','click',function(){ closeSheet(); });
+    on('subBack','click',function(){ exitSub(); });
+    on('subPlay','click',function(){
+      var b=$('subPlay'); b.textContent='推送中…';
+      pushList()['catch'](function(e){ toast('推送失败：'+e.message); })['then'](function(){ b.textContent='推送全部'; });
+    });
+    on('runDiag','click',runDiag);
+    on('optMask','click',closePicker);
+    on('saveBtn','click',savePrefs);
+    on('resetBtn','click',function(){ setVal('cookie',''); setVal('quality','80'); setVal('codec','7'); setVal('wall','pic'); syncPickers(); });
+    document.addEventListener('touchstart',function(e){ var t=e.target; if(t&&t.closest&&t.closest('.search'))return; if(document.activeElement!==$('q')&&!hasBodyClass('searching'))return; closeSug(); var q=$('q'); if(q&&q.blur)q.blur(); bodyClass('searching',false); },{passive:true});
+  }
+
+  function clampSafeTop(){
+    // 顶部避让逻辑：
+    //   edge/全屏融合模式 → WebView 铺到状态栏后面，需要避让状态栏
+    //   非全屏（App 有自己的 toolbar）→ toolbar 已占顶部，本页无需避让，safe-top 归 0
+    // 判断依据：chromeMode。normal 模式说明带原生 toolbar，不避让。
+    try{
+      var cs=getComputedStyle(document.documentElement);
+      var mode=(cs.getPropertyValue('--fm-chrome-mode')||'').trim();
+      var raw=parseFloat(cs.getPropertyValue('--fm-safe-top'))||0;
+      var sb=parseFloat(cs.getPropertyValue('--fm-status-bar-height'))||0;
+      var use;
+      if(mode==='normal' || mode==='tv-normal'){
+        use=0;                                 // 带原生 toolbar，不用自己避让
+      } else if(sb>0 && sb<=48){
+        use=sb;                                // edge/全屏：避让真实状态栏
+      } else if(raw<=48){
+        use=raw;
+      } else {
+        use=28;                                // 兜底：异常大时钳到典型状态栏
+      }
+      document.documentElement.style.setProperty('--safe-top', use+'px');
+    }catch(e){}
+  }
+
+  async function boot(){
+    native=!!(window.fm&&window.fm.req);
+    clampSafeTop();
+    window.addEventListener('fmviewport', clampSafeTop);
+    document.documentElement.className+=native?' fm-native':'';
+    if(window.fongmiClient&&window.fongmiClient.isLeanback) document.documentElement.className+=' fm-tv';
+    try{ await loadPrefs(); }catch(e){}
+    try{ bind(); }catch(e){}
+    try{ renderTabs(); }catch(e){}
+    try{ autoPage(); }catch(e){}
+    try{ initGestures(); }catch(e){}
+    try{ await loadHistory(); }catch(e){}
+    if(native&&fm.ui&&fm.ui.setChrome){ try{ fm.ui.setChrome({mode:'edge',statusBarStyle:'light',startup:true})['catch'](function(){}); }catch(e){} }
+    load(true);
+
+    // 后台预热 WBI key（缓存 1 小时）。不预热的话，第一次起播要现取一次 nav，
+    // 又是一个往返。这里不 await，不挡首屏。
+    try { B.wbiSign({}); } catch(e) {}
+  }
+
+  if(window.fm&&window.fm.req) boot();
+  else{ var started=false; window.addEventListener('fmsdk',function(){ if(!started){started=true;boot();} }); setTimeout(function(){ if(!started){started=true;boot();} },1200); }
+})();
+</script>
+
+</body></html>
