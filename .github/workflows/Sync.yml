@@ -57,7 +57,8 @@ jobs:
             [reF1nd]="https://github.com/syccccc2333-oss/singbox_config.git" 
             [bd]="https://github.com/xiaohaozifeifeifei/bd.git" 
             [catvod]="https://github.com/Darklessing/catvod.git" 
-            [jaychouqq]="https://github.com/wliqi495-create/jaychouqq.git" 
+            [jaychouqq]="https://github.com/wliqi495-create/jaychouqq.git"
+            [loleis]="https://github.com/loleis/pro.git" 
           ) 
  
           for name in "${!repos[@]}"; do 
@@ -87,7 +88,7 @@ jobs:
  
       - name: Fix timestamps（安全版） 
         run: | 
-          dirs="dr tvbox T4 wzxxcz Tomorrow aa999ok sky4726 ediart lemonguo121 leexuben yjl zheng1976 FGBLH yihad168 cpu_iy cpu_iy2 reF1nd bd catvod jaychouqq _posts" 
+          dirs="dr tvbox T4 wzxxcz Tomorrow aa999ok sky4726 ediart lemonguo121 leexuben yjl zheng1976 FGBLH yihad168 cpu_iy cpu_iy2 reF1nd bd catvod jaychouqq _posts loleis" 
  
           for d in $dirs; do 
             [ -d "$d" ] || continue 
