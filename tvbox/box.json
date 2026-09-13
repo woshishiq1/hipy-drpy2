@@ -233,13 +233,6 @@
    "ext": "./js/s/小镇.json"
   },
   {
-   "key": "西瓜",
-   "name": "西瓜影视",
-   "type": 3,
-   "api": "csp_XBPQ",
-   "ext": "./js/s/西瓜.json"
-  },
-  {
    "key": "狐狸君",
    "name": "狐狸君",
    "type": 3,

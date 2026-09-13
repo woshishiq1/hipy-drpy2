@@ -1,18 +1,13 @@
 {
  "sites": [
   {
-   "key": "PTT",
-   "name": "PTT",
+   "key": "py_douban",
+   "name": "豆瓣[py]",
    "type": 3,
-   "api": "csp_ProxySpider",
-   "style": {
-    "type": "rect",
-    "ratio": 1.33
-   },
-   "changeable": 1,
-   "ext": {
-    "class": "PTT"
-   }
+   "api": "./py/douban.py",
+   "searchable": 0,
+   "filterable": 0,
+   "changeable": 0
   },
   {
    "key": "cctv",
@@ -26,15 +21,16 @@
    "changeable": 1
   },
   {
-   "key": "小苹果",
-   "name": "小苹果",
-   "type": 4,
-   "api": "https://zhangqun19.serv00.net/pingguo.php",
-   "style": {
-    "type": "rect",
-    "ratio": 1.33
-   },
-   "changeable": 1
+   "key": "终端窗口",
+   "name": "终端窗口",
+   "type": 3,
+   "api": "csp_ProxySpider",
+   "searchable": 1,
+   "quickSearch": 1,
+   "filterable": 1,
+   "ext": {
+    "class": "PureTermuxSpider"
+   }
   },
   {
    "key": "csp_Dybj",
@@ -94,23 +90,6 @@
    }
   },
   {
-   "key": "油管py",
-   "name": "油管 | PY",
-   "type": 3,
-   "api": "./py/ytb.py",
-   "searchable": 1,
-   "quickSearch": 1,
-   "style": {
-    "type": "rect",
-    "ratio": 1.33
-   },
-   "ext": {
-    "count": "./lib/yt2.json",
-    "cookie": ""
-   },
-   "filterable": 1
-  },
-  {
    "key": "油管so",
    "name": "油管 | SO",
    "type": 3,
@@ -144,6 +123,23 @@
     "lang": "zh-CN",
     "region": "US"
    }
+  },
+  {
+   "key": "油管py",
+   "name": "油管 | PY",
+   "type": 3,
+   "api": "./py/ytb.py",
+   "searchable": 1,
+   "quickSearch": 1,
+   "style": {
+    "type": "rect",
+    "ratio": 1.33
+   },
+   "ext": {
+    "count": "./lib/yt2.json",
+    "cookie": ""
+   },
+   "filterable": 1
   },
   {
    "key": "油管webjartv",

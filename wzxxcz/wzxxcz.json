@@ -479,16 +479,10 @@
             "api": "./py/酷我音乐.py"
         },
 		{
-            "key": "呦呦DJ",
+            "key": "djyy",
             "name": "🎵呦呦DJ",
             "type": 3,
-            "api": "csp_Djuu",
-            "searchable": 1,
-            "quickSearch": 0,
-            "changeable": 0,
-            "style": {
-                "type": "list"
-            }
+            "api": "./py/DJ呦呦.py"
         },
 		{
             "key": "影子音乐",
