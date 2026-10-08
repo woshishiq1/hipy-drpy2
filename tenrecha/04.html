@@ -1,0 +1,1141 @@
+// ==================== 自然環境模擬引擎 V4.1 ====================
+
+(async function() {
+    try { await waitGlobalInitialized('Mvu'); } catch(e) { console.warn('[天氣引擎 V4.1] 等待 Mvu 初始化超時'); }
+
+    const _ = window._;
+    if (!_) { console.error('[天氣引擎 V4.1] lodash 不可用'); return; }
+
+    // ==================== 配置表 ====================
+
+    const SEASONS = {
+        '春季': { tempRange: [8, 25], highPressureBias: 0.55, evapRate: 1.2, stabilityBias: -5 },
+        '夏季': { tempRange: [22, 40], highPressureBias: 0.35, evapRate: 1.8, stabilityBias: -20 },
+        '秋季': { tempRange: [6, 24], highPressureBias: 0.50, evapRate: 1.0, stabilityBias: 0 },
+        '冬季': { tempRange: [-12, 5], highPressureBias: 0.65, evapRate: 0.6, stabilityBias: 15 }
+    };
+
+    const AIR_MASS = { HIGH_PRESSURE: '高壓', LOW_PRESSURE: '低壓' };
+
+    // 基本天氣查表（非冬季使用）
+    const WEATHER_RULES = [
+        { cond: { airMass: '高壓', humidityMax: 40 }, weather: '☀晴朗' },
+        { cond: { airMass: '高壓', humidityMin: 40, humidityMax: 60 }, weather: '☁多雲' },
+        { cond: { airMass: '高壓', humidityMin: 60 }, weather: '⛅陰天' },
+        { cond: { airMass: '低壓', humidityMax: 55 }, weather: '☁多雲' },
+        { cond: { airMass: '低壓', humidityMin: 55, humidityMax: 75 }, weather: '🌧小雨' },
+        { cond: { airMass: '低壓', humidityMin: 75 }, weather: '🌧大雨' },
+    ];
+
+    const WIND_LEVELS = ['無風', '微風', '中等風速', '大風', '暴風'];
+
+    // 生物群系配置（普通天氣用）
+    const BIOMES = {
+        '極寒冰川': { tempBase: -18, humidityBase: 20, windBase: 4, stabilityBias: 20,
+            weatherTendency: { '❄暴風雪': 2.5, '💨大風': 1.5, '❄大雪': 1.0 }, seasonLock: true },
+        '寒冷山地': { tempBase: 2, humidityBase: 45, windBase: 4, stabilityBias: 5,
+            weatherTendency: { '❄暴風雪': 1.5, '💨大風': 1.0, '❄大雪': 0.8 } },
+        '溫帶森林': { tempBase: 16, humidityBase: 65, windBase: 1, stabilityBias: 10, weatherTendency: {} },
+        '溫帶丘陵': { tempBase: 15, humidityBase: 55, windBase: 2, stabilityBias: 3, weatherTendency: {} },
+        '溫帶平原': { tempBase: 18, humidityBase: 50, windBase: 2, stabilityBias: 0, weatherTendency: {} },
+        '溫帶草原': { tempBase: 20, humidityBase: 35, windBase: 3, stabilityBias: -5,
+            weatherTendency: { '🌪龍捲風': 1.0, '🌪塵捲風': 1.5 } },
+        '乾旱荒漠': { tempBase: 38, humidityBase: 10, windBase: 3, stabilityBias: -20,
+            weatherTendency: { '🌪沙塵暴': 2.0, '🌪塵捲風': 1.0 } },
+        '赤色戈壁': { tempBase: 36, humidityBase: 8, windBase: 3, stabilityBias: -15,
+            weatherTendency: { '🌪血色沙塵': 2.0, '🔥地火': 1.5 } },
+        '黑曜石平原': { tempBase: 48, humidityBase: 3, windBase: 2, stabilityBias: -30,
+            weatherTendency: { '🌫灼光': 2.5, '🌪塵捲風': 0.5, '🌪黑沙暴': 2.0 } },
+        '荒漠綠洲': { tempBase: 34, humidityBase: 20, windBase: 2, stabilityBias: -10,
+            weatherTendency: { '💧涼風': 1.0, '🌪塵捲風': 0.5 } },
+        '海岸': { tempBase: 22, humidityBase: 75, windBase: 3, stabilityBias: -5,
+            weatherTendency: { '🌀颱風': 2.0, '🌫霧': 1.5 } },
+        '溼地/沼澤': { tempBase: 25, humidityBase: 85, windBase: 1, stabilityBias: 10,
+            weatherTendency: { '🌫霧': 1.5, '🌫毒霧': 1.2, '🌫瘴氣': 1.5 } },
+        '熱帶雨林': { tempBase: 30, humidityBase: 90, windBase: 1, stabilityBias: -10,
+            weatherTendency: { '🌧暴雨': 2.0, '🌫霧': 1.0, '🌧驟雨': 2.5 } },
+        '活火山帶': { tempBase: 48, humidityBase: 5, windBase: 3, stabilityBias: -35,
+            weatherTendency: { '🌋火山灰': 2.0, '🌫毒霧': 1.5, '🔥地火': 1.0, '🌫酸霧': 1.5 } },
+        '真菌森林': { tempBase: 22, humidityBase: 80, windBase: 1, stabilityBias: 15,
+            weatherTendency: { '🌫孢子云': 2.5, '🌫霧': 0.5, '🌫孢子雨': 2.0 } },
+        '地下/洞穴': { tempBase: 15, humidityBase: 55, windBase: 0, stabilityBias: 30, weatherTendency: {} },
+        '城市廢墟': { tempBase: 24, humidityBase: 45, windBase: 2, stabilityBias: -5,
+            weatherTendency: { '🌫灰霾': 2.0 } },
+        '碎礫灘塗': { tempBase: 18, humidityBase: 70, windBase: 3, stabilityBias: 0, weatherTendency: { '🌫霧': 1.0 } },
+        '湖心巖島': { tempBase: 20, humidityBase: 60, windBase: 2, stabilityBias: 5, weatherTendency: {} }
+    };
+
+    // 地點 → 生物群系映射（按你的地圖補全）
+    const LOCATION_TO_BIOME = {
+        // 雪山
+        '古龍頂端': '極寒冰川', '風蝕峭壁': '寒冷山地', '冰磧斜坡': '寒冷山地',
+        // 山麓森林
+        '融雪溪谷': '溫帶森林', '靜謐溪地': '溫帶森林', '迴響松林': '溫帶森林', '交錯林緣': '溫帶森林',
+        // 丘陵
+        '漿果園丘': '溫帶丘陵', '巨石丘陵': '溫帶丘陵', '望湖臺地': '溫帶丘陵', '升風崖': '溫帶丘陵',
+        '楓葉潭': '溫帶丘陵', '斷崖瀑布': '溫帶丘陵', '巨人沉睡之地': '溫帶丘陵',
+        // 平原
+        '龜裂平原': '溫帶平原', '靜謐淺灘': '溫帶平原', '白石淺灘': '溫帶平原', '陽光溪谷': '溫帶平原',
+        // 草原
+        '聆風丘陵': '溫帶草原', '長草之海': '溫帶草原', '花海高地': '溫帶草原', '菌孢草原': '溫帶草原',
+        // 雨林 / 古木
+        '古木邊界': '熱帶雨林', '根鬚隘口': '熱帶雨林', '沉沒神廟': '熱帶雨林', '巨藤天梯': '熱帶雨林',
+        '紫杉迴廊': '熱帶雨林', '絞殺林': '熱帶雨林', '巨根高牆': '熱帶雨林', '林中空地': '熱帶雨林',
+        '林下幽光界': '熱帶雨林', '林冠之上': '熱帶雨林',
+        // 沼澤
+        '千沼之葦': '溼地/沼澤', '哀泣柳林': '溼地/沼澤', '沼澤水道': '溼地/沼澤', '瘴氣之谷': '溼地/沼澤', '菌光溼地': '溼地/沼澤',
+        // 湖
+        '環湖碎石灘': '碎礫灘塗', '星核島': '湖心巖島',
+        // 綠洲
+        '綠洲邊緣': '荒漠綠洲', '巨物之骸': '荒漠綠洲',
+        // 戈壁
+        '赤色戈壁': '赤色戈壁',
+        // 沙漠
+        '流沙之丘': '乾旱荒漠', '黃金沙海': '乾旱荒漠', '低語盆地': '乾旱荒漠', '枯骨河牀': '乾旱荒漠', '石林迷陣': '乾旱荒漠', '乾涸河谷': '乾旱荒漠',
+        // 黑曜石
+        '黑曜石之海': '黑曜石平原',
+        // 火山
+        '冷卻邊界': '活火山帶', '灰燼平原': '活火山帶', '岩漿主脈': '活火山帶', '熔岩迷宮': '活火山帶', '結晶洞窟': '活火山帶',
+        // 蘑菇林
+        '熒光邊界': '真菌森林', '巨蕈之柱': '真菌森林', '菌蓋天穹': '真菌森林', '菌絲深巢': '真菌森林',
+    };
+
+    // ==================== 特色天氣配置（按地點匹配） ====================
+    const SPECIAL_WEATHER = {
+        // 蘑菇林
+        '🌫孢子云': {
+            locations: ['巨蕈之柱', '菌蓋天穹', '菌絲深巢', '熒光邊界', '菌光溼地'],
+            condition: (atmo, vars) => atmo.stability > 10 && atmo.windLevel <= 2 && atmo.humiditySat > 60,
+            weight: 2.5
+        },
+        '🌫孢子雨': {
+            locations: ['巨蕈之柱', '菌蓋天穹', '菌絲深巢', '熒光邊界', '菌光溼地'],
+            condition: (atmo, vars) => atmo.humiditySat > 85 && atmo.windLevel <= 2 && atmo.stability > 15,
+            weight: 2.0
+        },
+        // 星核島
+        '💫磁霧': {
+            locations: ['星核島'],
+            condition: (atmo, vars) => atmo.humiditySat > 70 && isDaytime(vars),
+            weight: 1.5
+        },
+        '💫磁暴': {
+            locations: ['星核島'],
+            condition: (atmo, vars) => atmo.humiditySat > 80 && isFullMoon(vars),
+            weight: 2.0
+        },
+        // 赤色戈壁
+        '🌪血色沙塵': {
+            locations: ['赤色戈壁'],
+            condition: (atmo, vars) => atmo.humiditySat < 15 && atmo.windLevel >= 3 && atmo.stability < -20,
+            weight: 2.0
+        },
+        // 黑曜石之海
+        '🌪黑沙暴': {
+            locations: ['黑曜石之海'],
+            condition: (atmo, vars) => atmo.humiditySat < 10 && atmo.windLevel >= 3 && atmo.stability < -30,
+            weight: 2.0
+        },
+        '🌫灼光': {
+            locations: ['黑曜石之海'],
+            condition: (atmo, vars) => isDaytime(vars) && atmo.humiditySat < 10 && atmo.windLevel <= 1 && atmo.stability < -10,
+            weight: 2.5
+        },
+        // 岩漿區
+        '🔥地火': {
+            locations: ['赤色戈壁', '岩漿主脈', '冷卻邊界', '灰燼平原', '熔岩迷宮'],
+            condition: (atmo, vars) => atmo.windLevel >= 2 && atmo.humiditySat < 15,
+            weight: 1.5
+        },
+        '🌋熔岩濺射': {
+            locations: ['岩漿主脈', '熔岩迷宮'],
+            condition: (atmo, vars) => atmo.tempBaseline > 40 && atmo.stability < -30,
+            weight: 1.0
+        },
+        // 草原
+        '🌪塵捲風羣': {
+            locations: ['長草之海', '花海高地', '聆風丘陵', '菌孢草原'],
+            condition: (atmo, vars) => isDaytime(vars) && atmo.humiditySat < 25 && atmo.windLevel >= 2 && Math.abs(atmo.stability) < 20,
+            weight: 1.5
+        },
+        // 全地圖
+        '🌕月虹': {
+            locations: '*',
+            condition: (atmo, vars) => isFullMoon(vars) && atmo.humiditySat > 70 && atmo.stability > 10,
+            weight: 0.5
+        }
+    };
+
+    // ==================== 內部狀態 ====================
+
+    let atmosphere = {
+        airMass: AIR_MASS.HIGH_PRESSURE,
+        humiditySat: 40,
+        tempBaseline: 22,
+        windLevel: 1,
+        stability: 0,
+        trendCounter: 0,
+        lastDirection: null
+    };
+
+    let lastProcessedDay = 0, lastProcessedHour = 0, initialized = false;
+    let lastKnownBiome = '溫帶平原';
+    let lastKnownLocation = '';
+    let isProcessing = false;
+    let processingLockStart = 0;
+    let lastSnapshot = null;
+    let lastWeatherForTrend = '';
+
+    // ==================== 工具函數 ====================
+
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+    function rand(min, max) { return Math.random() * (max - min) + min; }
+    function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
+    function chance(probability) { return Math.random() < probability; }
+
+    function getCurrentHourFloat(vars) {
+        const timeStr = _.get(vars, '系統.當前時間', '08:00');
+        const parts = timeStr.split(':');
+        return parseInt(parts[0]) + (parts.length > 1 ? parseInt(parts[1]) / 60 : 0);
+    }
+
+    function getSeasonConfig(vars) {
+        const season = _.get(vars, '環境.季節', '春季');
+        return SEASONS[season] || SEASONS['春季'];
+    }
+
+    function getCurrentBiome(vars) {
+        const location = _.get(vars, '環境.當前位置', '待定');
+        for (const place in LOCATION_TO_BIOME) {
+            if (location.includes(place)) {
+                return LOCATION_TO_BIOME[place];
+            }
+        }
+        return '溫帶平原';
+    }
+
+    function isDaytime(vars) {
+        const hour = getCurrentHourFloat(vars);
+        return hour >= 6.0 && hour <= 18.5;
+    }
+
+    function isFullMoon(vars) {
+        const moon = _.get(vars, '環境.月相', '');
+        return moon.includes('滿月');
+    }
+
+    // ==================== 月相計算 ====================
+
+    function calculateMoonPhase(vars) {
+        const day = _.get(vars, '系統.經過天數', 0);
+        const phaseIndex = day % 8;
+
+        let phase = '';
+        let emoji = '';
+
+        if (phaseIndex === 0) {
+            phase = '新月'; emoji = '🌑';
+        } else if (phaseIndex === 1 || phaseIndex === 2) {
+            phase = '上弦月'; emoji = '🌓';
+        } else if (phaseIndex === 3 || phaseIndex === 4) {
+            phase = '滿月'; emoji = '🌕';
+        } else if (phaseIndex === 5 || phaseIndex === 6) {
+            phase = '下弦月'; emoji = '🌗';
+        } else {
+            phase = '新月'; emoji = '🌑';
+        }
+
+        _.set(vars, '環境.月相', emoji + phase);
+    }
+
+    // ==================== 天氣等級系統 ====================
+
+    function getWeatherLevel(weather) {
+        const levels = {
+            '☀晴朗': 0,
+            '☁多雲': 1,
+            '⛅陰天': 2,
+            '🌧小雨': 3,
+            '🌧大雨': 4,
+            '🌩雷暴': 5,
+            '🌧豪雨': 6,
+            '❄小雪': 3,
+            '❄大雪': 4,
+            '🌪沙塵暴': 5,
+            '🌋火山灰': 5,
+            '🌪龍捲風': 6,
+            '🌀颱風': 6,
+            '❄暴風雪': 6,
+            '🌪黑沙暴': 6,
+            '🌪血色沙塵': 5,
+            '🌫灼光': 3,
+            '🔥地火': 5,
+            '🌫霧': 2,
+            '🌫毒霧': 3,
+            '🌫孢子云': 3,
+            '🌫孢子雨': 4,
+            '🌫酸霧': 4,
+            '🌫灰霾': 2,
+            '🌫瘴氣': 3,
+            '🌪塵捲風': 3,
+            '💨大風': 2,
+            '💧涼風': 1,
+            '🌧暴雨': 5,
+            '🌧驟雨': 3,
+            '💫磁霧': 3,
+            '💫磁暴': 5,
+            '🌋熔岩濺射': 5,
+            '🌪塵捲風羣': 3,
+            '🌕月虹': 0
+        };
+        return levels[weather] !== undefined ? levels[weather] : 2;
+    }
+
+    function getWeatherChain(vars) {
+        const season = _.get(vars, '環境.季節', '春季');
+        const baseChain = ['☀晴朗', '☁多雲', '⛅陰天'];
+
+        if (season === '冬季') {
+            return [...baseChain, '❄小雪', '❄大雪'];
+        }
+
+        if (season === '夏季') {
+            return [...baseChain, '🌧小雨', '🌧大雨', '🌩雷暴', '🌧豪雨'];
+        }
+
+        if (season === '春季') {
+            return [...baseChain, '🌧小雨', '🌧大雨', '🌩雷暴'];
+        }
+
+        return [...baseChain, '🌧小雨', '🌧大雨'];
+    }
+
+    // ==================== 特殊天氣清單 ====================
+
+    function isSpecialWeather(weather) {
+        const specials = [
+            '🌪沙塵暴', '🌋火山灰', '🌪龍捲風', '🌀颱風',
+            '🌪黑沙暴', '🌪血色沙塵', '🌫灼光', '🔥地火',
+            '🌫毒霧', '🌫孢子云', '🌫孢子雨', '🌫酸霧', '🌫瘴氣',
+            '🌪塵捲風', '💨大風', '💧涼風', '🌫灰霾',
+            '❄暴風雪', '🌧暴雨', '🌧驟雨',
+            '💫磁霧', '💫磁暴', '🌋熔岩濺射', '🌪塵捲風羣', '🌕月虹'
+        ];
+        return specials.includes(weather);
+    }
+
+    // ==================== 趨勢計數器 ====================
+
+    function resetTrendCounter() {
+        atmosphere.trendCounter = 0;
+        atmosphere.lastDirection = null;
+        console.log('[天氣引擎 V4.1] 📊 趨勢計數器已歸零');
+    }
+
+    // ==================== 快速放晴檢查 ====================
+
+    function checkFastClear(vars, oldWeather, newWeather) {
+        if (oldWeather === '🌧小雨' && newWeather === '⛅陰天') {
+            const roll = Math.random() * 100;
+            console.log('[天氣引擎 V4.1] ☀️ 快速放晴檢查：小雨→陰天，ROLL=' + Math.round(roll));
+
+            if (roll <= 70) {
+                console.log('[天氣引擎 V4.1] ☀️ 快速放晴觸發！陰天→多雲→晴朗 加速完成');
+
+                syncAtmosphereToWeather('☀晴朗');
+                resetTrendCounter();
+
+                return '☀晴朗';
+            } else {
+                console.log('[天氣引擎 V4.1] ☀️ 快速放晴未觸發，維持陰天（正常模式）');
+                return '⛅陰天';
+            }
+        }
+
+        return newWeather;
+    }
+
+    // ==================== 天氣→內部狀態同步 ====================
+
+    function syncAtmosphereToWeather(weather) {
+        switch(weather) {
+            case '☀晴朗':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 30;
+                atmosphere.stability = 40;
+                break;
+            case '☁多雲':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 50;
+                atmosphere.stability = 15;
+                break;
+            case '⛅陰天':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 68;
+                atmosphere.stability = -10;
+                break;
+            case '🌧小雨':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 78;
+                atmosphere.stability = -25;
+                break;
+            case '🌧大雨':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 88;
+                atmosphere.stability = -45;
+                break;
+            case '🌩雷暴':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 92;
+                atmosphere.stability = -65;
+                break;
+            case '🌧豪雨':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 96;
+                atmosphere.stability = -80;
+                break;
+            case '❄小雪':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 78;
+                atmosphere.stability = -5;
+                break;
+            case '❄大雪':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 88;
+                atmosphere.stability = -20;
+                break;
+            case '❄暴風雪':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 92;
+                atmosphere.stability = -50;
+                break;
+            case '🌪沙塵暴':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 15;
+                atmosphere.stability = -45;
+                break;
+            case '🌋火山灰':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 10;
+                atmosphere.stability = -40;
+                break;
+            case '🌫霧':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 75;
+                atmosphere.stability = 35;
+                break;
+            case '🌫毒霧':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 80;
+                atmosphere.stability = 45;
+                break;
+            case '🌫孢子云':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 82;
+                atmosphere.stability = 40;
+                break;
+            case '🌫孢子雨':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 90;
+                atmosphere.stability = 20;
+                break;
+            case '🌫酸霧':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 78;
+                atmosphere.stability = 50;
+                break;
+            case '🌫瘴氣':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 85;
+                atmosphere.stability = 55;
+                break;
+            case '🌪龍捲風':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 85;
+                atmosphere.stability = -90;
+                break;
+            case '🌀颱風':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 95;
+                atmosphere.stability = -95;
+                break;
+            case '🌪黑沙暴':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 10;
+                atmosphere.stability = -60;
+                break;
+            case '🌪血色沙塵':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 12;
+                atmosphere.stability = -55;
+                break;
+            case '🌫灼光':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 5;
+                atmosphere.stability = -15;
+                break;
+            case '🔥地火':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 8;
+                atmosphere.stability = -30;
+                break;
+            case '🌫灰霾':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 35;
+                atmosphere.stability = 30;
+                break;
+            case '🌪塵捲風':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 20;
+                atmosphere.stability = 10;
+                break;
+            case '💨大風':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 70;
+                atmosphere.stability = -15;
+                break;
+            case '💧涼風':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 40;
+                atmosphere.stability = 20;
+                break;
+            case '🌧暴雨':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 94;
+                atmosphere.stability = -70;
+                break;
+            case '🌧驟雨':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 92;
+                atmosphere.stability = -30;
+                break;
+            case '💫磁霧':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 75;
+                atmosphere.stability = 20;
+                break;
+            case '💫磁暴':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 85;
+                atmosphere.stability = -40;
+                break;
+            case '🌋熔岩濺射':
+                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+                atmosphere.humiditySat = 5;
+                atmosphere.stability = -60;
+                break;
+            case '🌪塵捲風羣':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 20;
+                atmosphere.stability = 5;
+                break;
+            case '🌕月虹':
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 75;
+                atmosphere.stability = 30;
+                break;
+            default:
+                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+                atmosphere.humiditySat = 40;
+                atmosphere.stability = 20;
+        }
+        atmosphere.humiditySat = clamp(atmosphere.humiditySat, 5, 98);
+        atmosphere.stability = clamp(atmosphere.stability, -100, 100);
+
+        console.log('[天氣引擎 V4.1] 🔄 同步完成：' + weather +
+            ' | 氣團=' + atmosphere.airMass +
+            ' | 濕度=' + Math.round(atmosphere.humiditySat) +
+            ' | 穩定度=' + Math.round(atmosphere.stability));
+    }
+
+    // ==================== 跨地圖 Roll 點 ====================
+
+    // 明確接收 biome 參數，避免依賴 lastKnownBiome 的更新時序
+    function rollWeatherForNewBiome(vars, biomeName) {
+        const biome = BIOMES[biomeName] || BIOMES['溫帶平原'];
+
+        let goodChance = 50;
+
+        if (atmosphere.airMass === '高壓') goodChance += 20;
+        else if (atmosphere.airMass === '低壓') goodChance -= 20;
+
+        goodChance += biome.stabilityBias * 0.3;
+
+        const season = _.get(vars, '環境.季節', '春季');
+        if (season === '春季') goodChance += 5;
+        else if (season === '夏季') goodChance -= 10;
+        else if (season === '冬季') goodChance -= 15;
+
+        goodChance = clamp(goodChance, 10, 90);
+
+        const roll = Math.random() * 100;
+        const isGood = roll < goodChance;
+
+        console.log('[天氣引擎 V4.1] 🎲 跨地圖 Roll 點：' + Math.round(roll) + ' → ' + (isGood ? '好天氣 ✅' : '壞天氣 ❌') + ' (機率' + Math.round(goodChance) + '%)');
+
+        if (isGood) {
+            atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
+            atmosphere.humiditySat = clamp(atmosphere.humiditySat - rand(10, 20), 10, 60);
+            atmosphere.stability = clamp(atmosphere.stability + rand(5, 15), -50, 100);
+        } else {
+            atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
+            atmosphere.humiditySat = clamp(atmosphere.humiditySat + rand(10, 20), 40, 95);
+            atmosphere.stability = clamp(atmosphere.stability - rand(5, 15), -100, 50);
+        }
+
+        atmosphere.tempBaseline += (biome.tempBase - atmosphere.tempBaseline) * 0.3;
+        atmosphere.windLevel = biome.windBase;
+
+        atmosphere.humiditySat = clamp(atmosphere.humiditySat, 5, 98);
+        atmosphere.stability = clamp(atmosphere.stability, -100, 100);
+        atmosphere.tempBaseline = clamp(atmosphere.tempBaseline, -30, 60);
+    }
+
+    // ==================== 特色天氣檢查（按地點匹配） ====================
+
+    function checkBiomeSpecificWeather(vars) {
+        const loc = _.get(vars, '環境.當前位置', '');
+        if (!loc) return null;
+
+        for (const [weatherName, cfg] of Object.entries(SPECIAL_WEATHER)) {
+            // 地點匹配
+            if (cfg.locations !== '*') {
+                const list = Array.isArray(cfg.locations) ? cfg.locations : [cfg.locations];
+                const matched = list.some(name => loc.includes(name) || name.includes(loc));
+                if (!matched) continue;
+            }
+
+            // 條件匹配
+            if (!cfg.condition(atmosphere, vars)) continue;
+
+            // 權重骰
+            if (Math.random() < cfg.weight * 0.3) {
+                return weatherName;
+            }
+        }
+
+        return null;
+    }
+
+    // ==================== 推導天氣 ====================
+
+    function deriveWeather(vars) {
+        const season = _.get(vars, '環境.季節', '春季');
+
+        if (season === '冬季') {
+            if (atmosphere.airMass === '高壓') {
+                if (atmosphere.humiditySat < 40) return '☀晴朗';
+                if (atmosphere.humiditySat < 60) return '☁多雲';
+                return '⛅陰天';
+            } else {
+                if (atmosphere.humiditySat < 55) return '☁多雲';
+                if (atmosphere.humiditySat < 75) return '⛅陰天';
+                if (atmosphere.humiditySat < 88) return '❄小雪';
+                return '❄大雪';
+            }
+        }
+
+        for (const rule of WEATHER_RULES) {
+            const c = rule.cond;
+            if (c.airMass && c.airMass !== atmosphere.airMass) continue;
+            if (c.humidityMin !== undefined && atmosphere.humiditySat < c.humidityMin) continue;
+            if (c.humidityMax !== undefined && atmosphere.humiditySat > c.humidityMax) continue;
+            return rule.weather;
+        }
+        return atmosphere.airMass === AIR_MASS.HIGH_PRESSURE ? '☀晴朗' : '☁多雲';
+    }
+
+    function deriveWeatherWithTrend(vars) {
+        const special = checkBiomeSpecificWeather(vars);
+        if (special) {
+            return special;
+        }
+
+        let baseWeather = deriveWeather(vars);
+
+        if (atmosphere.trendCounter === 0 || !atmosphere.lastDirection) {
+            return baseWeather;
+        }
+
+        const chain = getWeatherChain(vars);
+        const idx = chain.indexOf(baseWeather);
+
+        if (idx === -1) {
+            return baseWeather;
+        }
+
+        const trendMod = atmosphere.trendCounter * 10;
+        let chanceToFollowTrend = Math.min(30 + trendMod, 80);
+
+        if (Math.random() * 100 < chanceToFollowTrend) {
+            if (atmosphere.lastDirection === '惡化' && idx < chain.length - 1) {
+                return chain[idx + 1];
+            } else if (atmosphere.lastDirection === '好轉' && idx > 0) {
+                return chain[idx - 1];
+            }
+        }
+
+        return baseWeather;
+    }
+
+    // ==================== 天氣簡報 ====================
+
+    function buildWeatherBrief(vars, weather, oldWeather, prevTime) {
+        const season = _.get(vars, '環境.季節', '春季');
+        const time = _.get(vars, '系統.當前時間', '08:00');
+        const temp = Math.round(atmosphere.tempBaseline);
+        const oldTemp = Math.round(_.get(vars, '環境.氣溫', temp));
+        const moon = _.get(vars, '環境.月相', '');
+        const loc = _.get(vars, '環境.當前位置', '');
+
+        const seasonDesc = {
+            '春季': '暖和多雨',
+            '夏季': '炎熱多雷雨',
+            '秋季': '涼爽乾燥',
+            '冬季': '寒冷少雨'
+        }[season] || '';
+
+        let change = '維持不變';
+        if (oldWeather && oldWeather !== weather) {
+            const oldLevel = getWeatherLevel(oldWeather);
+            const newLevel = getWeatherLevel(weather);
+            if (newLevel > oldLevel) change = '惡化';
+            else if (newLevel < oldLevel) change = '轉晴';
+        }
+
+        // 用傳入的 prevTime 判斷白天/夜晚切換
+        const prevHour = prevTime ? parseInt(prevTime.split(':')[0]) : -1;
+        const curHour = parseInt(time.split(':')[0]);
+        const wasDay = prevHour >= 6 && prevHour <= 18;
+        const isDay = curHour >= 6 && curHour <= 18;
+
+        if (prevHour >= 0) {
+            if (wasDay && !isDay) change = '轉夜晚';
+            else if (!wasDay && isDay) change = '轉天亮';
+        }
+
+        let brief = `地點：${loc}。`;
+        brief += `季節：${season}，氣候${seasonDesc}。`;
+        brief += `天氣：${change}`;
+
+        if (change === '維持不變') {
+            brief += `，${weather}`;
+        } else {
+            brief += `，將轉為：${weather}`;
+        }
+
+        brief += `，氣溫 ${oldTemp}→${temp}。`;
+        if (moon) brief += `月相：${moon}。`;
+        brief += `時間：${time}。`;
+
+        _.set(vars, '環境.天氣簡報', brief);
+    }
+
+    // ==================== 體感溫度計算 ====================
+
+    function calculateFeltTemperature(vars, baseTemp, windLevel, humidity) {
+        let felt = baseTemp;
+
+        // 風寒效應（低溫 + 強風）
+        if (baseTemp < 10) {
+            felt -= windLevel * 1.5;
+        }
+        // 濕熱效應（高溫 + 高濕）
+        else if (baseTemp > 30) {
+            felt += (humidity - 50) * 0.05;
+            felt += windLevel * 0.5;
+        }
+        // 常溫：風速微調
+        else {
+            if (windLevel >= 3) felt -= windLevel * 0.5;
+        }
+
+        return Math.round(felt);
+    }
+
+    // ==================== 環境寫入 ====================
+
+    function writeEnv(vars, weather, modifiedBy) {
+        const ws = WIND_LEVELS[atmosphere.windLevel] || '微風';
+        const at = Math.round(atmosphere.tempBaseline);
+
+        // 夜間天氣轉換
+        let displayWeather = weather;
+        if (!isDaytime(vars) && weather === '☀晴朗') {
+            displayWeather = '🌙晴朗';
+        }
+
+        let brightness = '中等';
+        if (isDaytime(vars)) {
+            brightness = weather.includes('雨') || weather.includes('陰') || weather.includes('雪') || weather.includes('霧') ? '中等' : '強光';
+        } else {
+            brightness = '無光';
+        }
+
+        // 趨勢計數器
+        const oldWeather = lastWeatherForTrend || _.get(vars, '環境.天氣', '');
+        const newWeather = weather;
+
+        const newIsSpecial = isSpecialWeather(newWeather);
+        const oldIsSpecial = isSpecialWeather(oldWeather);
+
+        if (newIsSpecial) {
+            resetTrendCounter();
+            console.log('[天氣引擎 V4.1] 📊 特殊天氣觸發，計數器歸零：' + newWeather);
+        } else if (oldWeather && oldWeather !== newWeather && !oldIsSpecial) {
+            const oldLevel = getWeatherLevel(oldWeather);
+            const newLevel = getWeatherLevel(newWeather);
+
+            let direction = '穩定';
+            if (newLevel > oldLevel) direction = '惡化';
+            else if (newLevel < oldLevel) direction = '好轉';
+
+            if (direction !== '穩定') {
+                if (atmosphere.lastDirection === direction) {
+                    atmosphere.trendCounter = Math.min(atmosphere.trendCounter + 1, 3);
+                } else {
+                    atmosphere.trendCounter = 0;
+                }
+                atmosphere.lastDirection = direction;
+                console.log('[天氣引擎 V4.1] 📊 趨勢更新：' +
+                    oldWeather + ' → ' + newWeather +
+                    ' (' + direction + ')' +
+                    ' 計數器=' + atmosphere.trendCounter + '/3');
+            }
+        } else if (oldWeather && oldWeather !== newWeather && oldIsSpecial) {
+            console.log('[天氣引擎 V4.1] 📊 從特殊天氣恢復，不計入趨勢：' +
+                oldWeather + ' → ' + newWeather);
+        }
+
+        lastWeatherForTrend = newWeather;
+
+        // 寫入環境變量
+        _.set(vars, '環境.天氣', weather);
+        _.set(vars, '環境.亮度', brightness);
+        _.set(vars, '環境.風速', ws);
+        _.set(vars, '環境.氣溫', at);
+
+        const feltTemp = calculateFeltTemperature(vars, at, atmosphere.windLevel, atmosphere.humiditySat);
+        _.set(vars, '環境.體感溫度', feltTemp);
+
+        _.set(vars, '環境.$氣團', atmosphere.airMass);
+        _.set(vars, '環境.$濕度', Math.round(atmosphere.humiditySat));
+        _.set(vars, '環境.$穩定度', Math.round(atmosphere.stability));
+        _.set(vars, '環境.$趨勢計數器', atmosphere.trendCounter);
+        _.set(vars, '環境.$上次趨勢方向', atmosphere.lastDirection || '無');
+
+        // ========== 月相 + 天氣簡報 ==========
+        calculateMoonPhase(vars);
+
+        // 先讀取「前次時間」，再寫入新的「前次時間」
+        const oldWeatherForBrief = oldWeather;
+        const prevTime = _.get(vars, '系統.前次時間', '');
+        buildWeatherBrief(vars, weather, oldWeatherForBrief, prevTime);
+        _.set(vars, '系統.前次時間', _.get(vars, '系統.當前時間', '08:00'));
+        // ========== 結束 ==========
+
+        const snapshot = {
+            天氣: weather,
+            風速: ws,
+            氣溫: at,
+            季節: _.get(vars, '環境.季節', '春季'),
+            修改者: modifiedBy || '未知',
+            時間戳: Date.now(),
+            天數: _.get(vars, '系統.經過天數', 0),
+            趨勢計數器: atmosphere.trendCounter,
+            趨勢方向: atmosphere.lastDirection || '無'
+        };
+        _.set(vars, '環境.$天氣快照', JSON.stringify(snapshot));
+        lastSnapshot = snapshot;
+
+        console.log('[天氣引擎 V4.1] 📸 快照更新：' + weather +
+            ' (修改者：' + (modifiedBy || '未知') +
+            ' | 趨勢：' + (atmosphere.lastDirection || '無') +
+            ' [' + atmosphere.trendCounter + '/3])');
+
+        // ========== 天氣變化總結 ==========
+        const prevWeather = oldWeather || '（無）';
+        if (prevWeather !== weather) {
+            console.log('[天氣引擎 V4.1] 🌤️ 天氣變化：' + prevWeather + ' → ' + weather +
+                ' | 修改者=' + (modifiedBy || '未知') +
+                ' | 地點=' + _.get(vars, '環境.當前位置', '') +
+                ' | 氣溫=' + at + '°C');
+        } else {
+            console.log('[天氣引擎 V4.1] 🌤️ 天氣維持：' + weather +
+                ' | 修改者=' + (modifiedBy || '未知') +
+                ' | 地點=' + _.get(vars, '環境.當前位置', '') +
+                ' | 氣溫=' + at + '°C' +
+                ' | 體感=' + feltTemp + '°C');
+        }
+        // ========== 總結結束 ==========
+    }
+
+    // ==================== AI Override 處理（抽成獨立函數） ====================
+
+    // 回傳處理後的天氣，並負責寫入 vars
+    function handleAIOverride(sd, currentWeather) {
+        console.log('[天氣引擎 V4.1] 🟢 AI 修改天氣：' + currentWeather);
+        syncAtmosphereToWeather(currentWeather);
+
+        let finalWeather = currentWeather;
+        let modifiedBy = 'AI';
+
+        const special = checkBiomeSpecificWeather(sd);
+        if (special) {
+            console.log('[天氣引擎 V4.1] 🟠 特殊天氣覆蓋：' + special);
+            finalWeather = special;
+            modifiedBy = '引擎(特殊天氣)';
+            syncAtmosphereToWeather(special);
+        }
+
+        const oldWeather = lastWeatherForTrend || _.get(sd, '環境.天氣', '');
+        const fastClearResult = checkFastClear(sd, oldWeather, finalWeather);
+        if (fastClearResult !== finalWeather) {
+            finalWeather = fastClearResult;
+            modifiedBy = '引擎(快速放晴)';
+        }
+
+        writeEnv(sd, finalWeather, modifiedBy);
+    }
+
+    // ==================== 主處理 ====================
+
+    function processWeather(vars, hoursPassed) {
+        const currentWeather = _.get(vars, '環境.天氣', '');
+        const currentLocation = _.get(vars, '環境.當前位置', '');
+        let finalWeather = currentWeather;
+        let modifiedBy = '引擎';
+
+        const isLocationChanged = currentLocation !== lastKnownLocation;
+
+        if (isLocationChanged) {
+            console.log('[天氣引擎 V4.1] 🏔️ 跨地圖：' + lastKnownLocation + ' → ' + currentLocation);
+
+            // 先算出新 biome，明確傳給 rollWeatherForNewBiome
+            const newBiome = getCurrentBiome(vars);
+
+            lastKnownLocation = currentLocation;
+            lastKnownBiome = newBiome;
+
+            rollWeatherForNewBiome(vars, newBiome);
+
+            finalWeather = deriveWeather(vars);
+            modifiedBy = '引擎(跨地圖)';
+
+            writeEnv(vars, finalWeather, modifiedBy);
+            return;
+        }
+
+        // AI override 判斷
+        const snapshotStr = _.get(vars, '環境.$天氣快照', '');
+        let isAIOverride = false;
+
+        if (snapshotStr && currentWeather) {
+            try {
+                const snap = JSON.parse(snapshotStr);
+                if (currentWeather !== snap.天氣) {
+                    isAIOverride = true;
+                    console.log('[天氣引擎 V4.1] 🟢 檢測到 AI 修改天氣：' + snap.天氣 + ' → ' + currentWeather);
+                }
+            } catch(e) {}
+        } else if (currentWeather) {
+            isAIOverride = true;
+        }
+
+        if (isAIOverride && currentWeather) {
+            handleAIOverride(vars, currentWeather);
+            return;
+        }
+
+        if (hoursPassed > 0) {
+            let humidityChange = 0;
+            if (atmosphere.airMass === '高壓') {
+                humidityChange = -0.5 * hoursPassed;
+            } else {
+                humidityChange = 0.5 * hoursPassed;
+            }
+            atmosphere.humiditySat = clamp(atmosphere.humiditySat + humidityChange, 5, 98);
+
+            const seasonCfg = getSeasonConfig(vars);
+            const targetTemp = (seasonCfg.tempRange[0] + seasonCfg.tempRange[1]) / 2;
+            atmosphere.tempBaseline += (targetTemp - atmosphere.tempBaseline) * Math.min(0.05 * hoursPassed, 0.3);
+            atmosphere.tempBaseline = clamp(atmosphere.tempBaseline, -30, 60);
+        }
+
+        // 推演天氣
+        let derivedWeather = deriveWeatherWithTrend(vars);
+
+        // 檢查快速放晴
+        const oldWeather = lastWeatherForTrend || _.get(vars, '環境.天氣', '');
+        const fastClearResult = checkFastClear(vars, oldWeather, derivedWeather);
+        if (fastClearResult !== derivedWeather) {
+            derivedWeather = fastClearResult;
+            modifiedBy = '引擎(快速放晴)';
+        } else {
+            modifiedBy = '引擎(正常推演)';
+        }
+
+        writeEnv(vars, derivedWeather, modifiedBy);
+    }
+
+    // ==================== 初始化 ====================
+
+    function performInit(sd, curDay, curHour) {
+        const currentBiome = getCurrentBiome(sd);
+        const biomeCfg = BIOMES[currentBiome] || BIOMES['溫帶平原'];
+        lastKnownBiome = currentBiome;
+        lastKnownLocation = _.get(sd, '環境.當前位置', '');
+
+        const season = _.get(sd, '環境.季節', '春季');
+        const seasonCfg = SEASONS[season] || SEASONS['春季'];
+
+        const existingWeather = _.get(sd, '環境.天氣', '');
+
+        // 氣溫 fallback 用季節平均值
+        const defaultTemp = Math.round((seasonCfg.tempRange[0] + seasonCfg.tempRange[1]) / 2);
+        const existingTemp = Math.round(_.get(sd, '環境.氣溫', defaultTemp));
+
+        if (existingWeather) {
+            syncAtmosphereToWeather(existingWeather);
+            atmosphere.tempBaseline = existingTemp;
+            lastWeatherForTrend = existingWeather;
+        } else {
+            const pressureBias = seasonCfg.highPressureBias;
+            atmosphere.airMass = pressureBias > 0.5 ? AIR_MASS.HIGH_PRESSURE : AIR_MASS.LOW_PRESSURE;
+            atmosphere.humiditySat = clamp(biomeCfg.humidityBase + rand(-5, 5), 5, 98);
+            atmosphere.tempBaseline = existingTemp;
+            atmosphere.windLevel = biomeCfg.windBase || 1;
+            atmosphere.stability = (seasonCfg.stabilityBias || 0) * 0.5 + (biomeCfg.stabilityBias || 0) * 0.5;
+            atmosphere.stability = clamp(atmosphere.stability + rand(-10, 10), -100, 100);
+            resetTrendCounter();
+        }
+
+        const weather = deriveWeather(sd);
+        writeEnv(sd, weather, '引擎(初始化)');
+
+        console.log('[天氣引擎 V4.1] 初始化完成：地理=' + currentBiome + ' 天氣=' + weather +
+            ' 氣溫=' + Math.round(atmosphere.tempBaseline) + '°C');
+    }
+
+    // ==================== 自動觸發 ====================
+
+    function tryAutoProcess(newVars) {
+        if (isProcessing && (Date.now() - processingLockStart) > 5000) {
+            console.warn('[天氣引擎 V4.1] 處理鎖超時，強制釋放');
+            isProcessing = false;
+        }
+        if (isProcessing) return;
+        isProcessing = true;
+        processingLockStart = Date.now();
+
+        try {
+            const sd = newVars.stat_data;
+            if (!sd) return;
+
+            const curDay = _.get(sd, '系統.經過天數', 0);
+            const curTime = _.get(sd, '系統.當前時間', '08:00');
+            const curParts = curTime.split(':');
+            const curHour = parseInt(curParts[0]) + (curParts.length > 1 ? parseInt(curParts[1]) / 60 : 0);
+
+            if (initialized && (curDay < lastProcessedDay || (curDay === lastProcessedDay && curHour < lastProcessedHour))) {
+                console.log('[天氣引擎 V4.1] ⚠️ 偵測到時間倒退（可能刪樓），清除快照');
+                _.set(sd, '環境.$天氣快照', '');
+                _.set(sd, '環境.$氣團', undefined);
+                _.set(sd, '環境.$濕度', undefined);
+                _.set(sd, '環境.$穩定度', undefined);
+                _.set(sd, '環境.$趨勢計數器', undefined);
+                _.set(sd, '環境.$上次趨勢方向', undefined);
+                lastSnapshot = null;
+                lastWeatherForTrend = '';
+                resetTrendCounter();
+                initialized = false;
+                return;
+            }
+
+            if (!initialized) {
+                initialized = true;
+                lastProcessedDay = curDay;
+                lastProcessedHour = curHour;
+                lastKnownLocation = _.get(sd, '環境.當前位置', '');
+                lastKnownBiome = getCurrentBiome(sd);
+
+                const savedSnapshot = _.get(sd, '環境.$天氣快照', '');
+                if (savedSnapshot) {
+                    try {
+                        const snap = JSON.parse(savedSnapshot);
+                        const snapWeather = snap.天氣;
+                        if (snapWeather) {
+                            syncAtmosphereToWeather(snapWeather);
+                            atmosphere.tempBaseline = snap.氣溫 || 22;
+                            atmosphere.trendCounter = snap.趨勢計數器 || 0;
+                            atmosphere.lastDirection = snap.趨勢方向 || null;
+                            lastWeatherForTrend = snapWeather;
+                            console.log('[天氣引擎 V4.1] 從快照恢復狀態：' + snapWeather +
+                                ' 趨勢：' + (atmosphere.lastDirection || '無') +
+                                ' [' + atmosphere.trendCounter + '/3]');
+                        }
+                    } catch(e) {}
+                }
+
+                const currentWeather = _.get(sd, '環境.天氣', '');
+                if (!currentWeather) {
+                    performInit(sd, curDay, curHour);
+                } else {
+                    syncAtmosphereToWeather(currentWeather);
+                    atmosphere.tempBaseline = _.get(sd, '環境.氣溫', 22);
+                    lastWeatherForTrend = currentWeather;
+                    writeEnv(sd, currentWeather, '引擎(恢復)');
+                }
+
+                console.log('[天氣引擎 V4.1] 初始化完成');
+                return;
+            }
+
+            const hoursPassed = (curDay - lastProcessedDay) * 24 + (curHour - lastProcessedHour);
+
+            if (hoursPassed > 0) {
+                const snapStr = _.get(sd, '環境.$天氣快照', '');
+                const currentWeather = _.get(sd, '環境.天氣', '');
+                let isAIOverride = false;
+
+                if (snapStr && currentWeather) {
+                    try {
+                        const snap = JSON.parse(snapStr);
+                        if (currentWeather !== snap.天氣) {
+                            isAIOverride = true;
+                        }
+                    } catch(e) {}
+                }
+
+                if (isAIOverride && currentWeather) {
+                    handleAIOverride(sd, currentWeather);
+                } else {
+                    processWeather(sd, hoursPassed);
+                }
+
+                lastProcessedDay = curDay;
+                lastProcessedHour = curHour;
+            } else if (hoursPassed < 0) {
+                lastProcessedDay = curDay;
+                lastProcessedHour = curHour;
+                console.log('[天氣引擎 V4.1] 時間倒退，重置基準=' + curTime);
+            }
+        } catch (e) {
+            console.error('[天氣引擎 V4.1] 失敗:', e);
+        } finally {
+            isProcessing = false;
+        }
+    }
+
+    // ==================== 事件掛載 ====================
+
+    if (typeof eventOn === 'function') {
+        eventOn(Mvu.events.VARIABLE_UPDATE_ENDED, function(newVars) {
+            setTimeout(function() { tryAutoProcess(newVars); }, 0);
+        });
+        console.log('✅ 自然環境模擬引擎 V4.1 已加載（完整版）');
+        console.log('📊 功能：AI主導天氣 | 跨地圖Roll點 | 特殊天氣 | 快照記錄 | 趨勢計數器 | 冬季降雪 | 快速放晴 | 月相 | 天氣簡報');
+    } else {
+        console.warn('[天氣引擎 V4.1] eventOn 不可用');
+    }
+})();

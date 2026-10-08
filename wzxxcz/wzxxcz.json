@@ -2041,6 +2041,12 @@
             "api": "./py/豆花电影网.py"
         },
 		{
+            "key": "Auete影视",
+            "name": "🍊Auete影视",
+            "type": 3,
+            "api": "./py/Auete影视.py"
+        },
+		{
             "key": "爬虫影视",
             "name": "🐛爬虫影视",
             "type": 1,

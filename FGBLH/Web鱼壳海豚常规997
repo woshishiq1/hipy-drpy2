@@ -134,6 +134,12 @@
             "api": "https://ghfast.top/https://raw.githubusercontent.com/phu889/kjh998/refs/heads/main/py/ASMR吧.py"
         },
         {
+        	"key": "PTT线上看",
+            "name": "🐬PTT线上看[追剧]",
+            "type": 3,
+            "api": "https://ghfast.top/https://raw.githubusercontent.com/phu889/kjh998/refs/heads/main/py/PTT线上看.py"
+		},
+        {
         	"key": "洛雪TV",
             "name": "🐬洛雪TV(关梯)[追剧]",
             "type": 3,
@@ -1361,6 +1367,12 @@
 			"api": "https://ghfast.top/https://raw.githubusercontent.com/phu889/kjh998/refs/heads/main/py/易听书网.py"
 		},
 		{
+			"key": "QQ音乐",
+			"name": "🐬QQ音乐.py[音乐]",
+			"type": 3,
+			"api": "https://ghfast.top/https://raw.githubusercontent.com/phu889/kjh998/refs/heads/main/py/QQ音乐.py"
+		},
+        {
 			"key": "音乐聚合",
 			"name": "🐬音乐聚合.py[音乐]",
 			"type": 3,
