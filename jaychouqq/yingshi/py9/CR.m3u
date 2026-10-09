@@ -1,0 +1,47 @@
+#EXTM3U x-tvg-url="https://epg.v1.mk/fy.xml"
+#EXTINF:-1,tvg-id="彩虹电影" tvg-name="彩虹电影" tvg-logo="https://epg.v1.mk/logo/彩虹电影.png" group-title="其他",彩虹電影
+http://srteamhls.gotvsports.com:41111/w8chslnwkcidbh3r/index.m3u8
+#EXTINF:-1,tvg-id="E彩虹" tvg-name="E彩虹" tvg-logo="https://epg.v1.mk/logo/E彩虹.png" group-title="其他",彩虹R
+http://srteamhls.gotvsports.com:41111/f35jovi7msk6dd4p/index.m3u8
+#EXTINF:-1,tvg-id="E彩虹" tvg-name="E彩虹" tvg-logo="https://epg.v1.mk/logo/E彩虹.png" group-title="其他",彩虹E
+http://srteamhls.gotvsports.com:41111/gk1lhs34k93w0egd/index.m3u8
+#EXTINF:-1,tvg-id="松视1" tvg-name="松视1" tvg-logo="https://epg.v1.mk/logo/松视1.png" group-title="其他",松視1
+http://srteamhls.gotvsports.com:41111/wryqzmqlxxmi1zs2/index.m3u8
+#EXTINF:-1,tvg-id="松视2" tvg-name="松视2" tvg-logo="https://epg.v1.mk/logo/松视2.png" group-title="其他",松視2
+http://srteamhls.gotvsports.com:41111/5bllcktdn92dudy6/index.m3u8
+#EXTINF:-1,tvg-id="松视3" tvg-name="松视3" tvg-logo="https://epg.v1.mk/logo/松视3.png" group-title="其他",松視3
+http://srteamhls.gotvsports.com:41111/nzz5mti2l46gknhp/index.m3u8
+#EXTINF:-1,tvg-id="JStar极限电影台" tvg-name="JStar极限电影台" tvg-logo="https://epg.v1.mk/logo/JStar极限电影台.png" group-title="其他",極限電影台
+http://srteamhls.gotvsports.com:41111/s0doso0ydxe3yk2s/index.m3u8
+#EXTINF:-1,tvg-id="潘多拉完美" tvg-name="潘多拉完美" tvg-logo="https://epg.v1.mk/logo/潘多拉完美.png" group-title="其他",潘多拉完美
+http://srteamhls.gotvsports.com:41111/04v9iycrpkoelo1b/index.m3u8
+#EXTINF:-1,tvg-id="潘多拉粉红" tvg-name="潘多拉粉红" tvg-logo="https://epg.v1.mk/logo/潘多拉粉红.png" group-title="其他",潘多拉粉紅
+http://srteamhls.gotvsports.com:41111/t08gdnfdy3rycim0/index.m3u8
+#EXTINF:-1,tvg-id="HGTV 居家乐活频道" tvg-name="HGTV 居家乐活频道" tvg-logo="https://epg.v1.mk/logo/HGTV 居家乐活频道.png" group-title="其他",樂活頻道
+http://srteamhls.gotvsports.com:41111/i0a2mditbdzv0h4e/index.m3u8
+#EXTINF:-1,tvg-id="hot" tvg-name="hot" tvg-logo="https://epg.v1.mk/logo/hot.png" group-title="其他",HOT
+http://srteamhls.gotvsports.com:41111/krxh0hci5hfbsq7o/index.m3u8
+#EXTINF:-1,tvg-id="香蕉台" tvg-name="香蕉台" tvg-logo="https://epg.v1.mk/logo/香蕉台.png" group-title="其他",香蕉台
+http://srteamhls.gotvsports.com:41111/o1um0allc3pkwbae/index.m3u8
+#EXTINF:-1,tvg-id="happyfishing" tvg-name="happyfishing" tvg-logo="https://epg.v1.mk/logo/happyfishing.png" group-title="其他",Happy
+http://srteamhls.gotvsports.com:41111/ynmiv1i5as4k1oue/index.m3u8
+#EXTINF:-1,tvg-id="BEIN1" tvg-name="BEIN1" tvg-logo="https://epg.v1.mk/logo/BEIN1.png" group-title="其他",Bein1 HD French
+http://srteamhls.gotvsports.com:41111/c0jdyx9djdhdwdrp/index.m3u8
+#EXTINF:-1,tvg-id="BEIN2" tvg-name="BEIN2" tvg-logo="https://epg.v1.mk/logo/BEIN2.png" group-title="其他",Bein2HD French
+http://srteamhls.gotvsports.com:41111/ocg7nws1i9d4ewj2/index.m3u8
+#EXTINF:-1,tvg-id="BEIN1" tvg-name="BEIN1" tvg-logo="https://epg.v1.mk/logo/BEIN1.png" group-title="其他",Bein3HD French
+http://srteamhls.gotvsports.com:41111/g7flikl10jqzhj9h/index.m3u8
+#EXTINF:-1,tvg-id="BEIN1" tvg-name="BEIN1" tvg-logo="https://epg.v1.mk/logo/BEIN1.png" group-title="其他",Bein4HD French
+http://srteamhls.gotvsports.com:41111/b8rm0757j1qikdlh/index.m3u8
+#EXTINF:-1,tvg-id="BEIN1" tvg-name="BEIN1" tvg-logo="https://epg.v1.mk/logo/BEIN1.png" group-title="其他",Bein5HD French
+http://srteamhls.gotvsports.com:41111/z0betoemh3hwxzg3/index.m3u8
+#EXTINF:-1,tvg-id="BEIN1" tvg-name="BEIN1" tvg-logo="https://epg.v1.mk/logo/BEIN1.png" group-title="其他",Bein6 HD French
+http://srteamhls.gotvsports.com:41111/srzgl4gf3oj8l9ir/index.m3u8
+#EXTINF:-1,tvg-id="BEIN1" tvg-name="BEIN1" tvg-logo="https://epg.v1.mk/logo/BEIN1.png" group-title="其他",Bein7 HD French
+http://srteamhls.gotvsports.com:41111/aaeo3rgjxvd23vl0/index.m3u8
+#EXTINF:-1,tvg-id="BEIN1" tvg-name="BEIN1" tvg-logo="https://epg.v1.mk/logo/BEIN1.png" group-title="其他",Bein8 HD French
+http://srteamhls.gotvsports.com:41111/n7e0u99l1xackrt9/index.m3u8
+#EXTINF:-1,tvg-id="BEIN1" tvg-name="BEIN1" tvg-logo="https://epg.v1.mk/logo/BEIN1.png" group-title="其他",Bein9 HD French
+http://srteamhls.gotvsports.com:41111/9w5sshzpdlruhz3r/index.m3u8
+#EXTINF:-1,tvg-id="BEIN1" tvg-name="BEIN1" tvg-logo="https://epg.v1.mk/logo/BEIN1.png" group-title="其他",Bein10HD French
+http://srteamhls.gotvsports.com:41111/n00xq9m74p19zyn0/index.m3u8

@@ -1,1141 +1,3454 @@
-// ==================== 自然環境模擬引擎 V4.1 ====================
-
-(async function() {
-    try { await waitGlobalInitialized('Mvu'); } catch(e) { console.warn('[天氣引擎 V4.1] 等待 Mvu 初始化超時'); }
-
-    const _ = window._;
-    if (!_) { console.error('[天氣引擎 V4.1] lodash 不可用'); return; }
-
-    // ==================== 配置表 ====================
-
-    const SEASONS = {
-        '春季': { tempRange: [8, 25], highPressureBias: 0.55, evapRate: 1.2, stabilityBias: -5 },
-        '夏季': { tempRange: [22, 40], highPressureBias: 0.35, evapRate: 1.8, stabilityBias: -20 },
-        '秋季': { tempRange: [6, 24], highPressureBias: 0.50, evapRate: 1.0, stabilityBias: 0 },
-        '冬季': { tempRange: [-12, 5], highPressureBias: 0.65, evapRate: 0.6, stabilityBias: 15 }
-    };
-
-    const AIR_MASS = { HIGH_PRESSURE: '高壓', LOW_PRESSURE: '低壓' };
-
-    // 基本天氣查表（非冬季使用）
-    const WEATHER_RULES = [
-        { cond: { airMass: '高壓', humidityMax: 40 }, weather: '☀晴朗' },
-        { cond: { airMass: '高壓', humidityMin: 40, humidityMax: 60 }, weather: '☁多雲' },
-        { cond: { airMass: '高壓', humidityMin: 60 }, weather: '⛅陰天' },
-        { cond: { airMass: '低壓', humidityMax: 55 }, weather: '☁多雲' },
-        { cond: { airMass: '低壓', humidityMin: 55, humidityMax: 75 }, weather: '🌧小雨' },
-        { cond: { airMass: '低壓', humidityMin: 75 }, weather: '🌧大雨' },
-    ];
-
-    const WIND_LEVELS = ['無風', '微風', '中等風速', '大風', '暴風'];
-
-    // 生物群系配置（普通天氣用）
-    const BIOMES = {
-        '極寒冰川': { tempBase: -18, humidityBase: 20, windBase: 4, stabilityBias: 20,
-            weatherTendency: { '❄暴風雪': 2.5, '💨大風': 1.5, '❄大雪': 1.0 }, seasonLock: true },
-        '寒冷山地': { tempBase: 2, humidityBase: 45, windBase: 4, stabilityBias: 5,
-            weatherTendency: { '❄暴風雪': 1.5, '💨大風': 1.0, '❄大雪': 0.8 } },
-        '溫帶森林': { tempBase: 16, humidityBase: 65, windBase: 1, stabilityBias: 10, weatherTendency: {} },
-        '溫帶丘陵': { tempBase: 15, humidityBase: 55, windBase: 2, stabilityBias: 3, weatherTendency: {} },
-        '溫帶平原': { tempBase: 18, humidityBase: 50, windBase: 2, stabilityBias: 0, weatherTendency: {} },
-        '溫帶草原': { tempBase: 20, humidityBase: 35, windBase: 3, stabilityBias: -5,
-            weatherTendency: { '🌪龍捲風': 1.0, '🌪塵捲風': 1.5 } },
-        '乾旱荒漠': { tempBase: 38, humidityBase: 10, windBase: 3, stabilityBias: -20,
-            weatherTendency: { '🌪沙塵暴': 2.0, '🌪塵捲風': 1.0 } },
-        '赤色戈壁': { tempBase: 36, humidityBase: 8, windBase: 3, stabilityBias: -15,
-            weatherTendency: { '🌪血色沙塵': 2.0, '🔥地火': 1.5 } },
-        '黑曜石平原': { tempBase: 48, humidityBase: 3, windBase: 2, stabilityBias: -30,
-            weatherTendency: { '🌫灼光': 2.5, '🌪塵捲風': 0.5, '🌪黑沙暴': 2.0 } },
-        '荒漠綠洲': { tempBase: 34, humidityBase: 20, windBase: 2, stabilityBias: -10,
-            weatherTendency: { '💧涼風': 1.0, '🌪塵捲風': 0.5 } },
-        '海岸': { tempBase: 22, humidityBase: 75, windBase: 3, stabilityBias: -5,
-            weatherTendency: { '🌀颱風': 2.0, '🌫霧': 1.5 } },
-        '溼地/沼澤': { tempBase: 25, humidityBase: 85, windBase: 1, stabilityBias: 10,
-            weatherTendency: { '🌫霧': 1.5, '🌫毒霧': 1.2, '🌫瘴氣': 1.5 } },
-        '熱帶雨林': { tempBase: 30, humidityBase: 90, windBase: 1, stabilityBias: -10,
-            weatherTendency: { '🌧暴雨': 2.0, '🌫霧': 1.0, '🌧驟雨': 2.5 } },
-        '活火山帶': { tempBase: 48, humidityBase: 5, windBase: 3, stabilityBias: -35,
-            weatherTendency: { '🌋火山灰': 2.0, '🌫毒霧': 1.5, '🔥地火': 1.0, '🌫酸霧': 1.5 } },
-        '真菌森林': { tempBase: 22, humidityBase: 80, windBase: 1, stabilityBias: 15,
-            weatherTendency: { '🌫孢子云': 2.5, '🌫霧': 0.5, '🌫孢子雨': 2.0 } },
-        '地下/洞穴': { tempBase: 15, humidityBase: 55, windBase: 0, stabilityBias: 30, weatherTendency: {} },
-        '城市廢墟': { tempBase: 24, humidityBase: 45, windBase: 2, stabilityBias: -5,
-            weatherTendency: { '🌫灰霾': 2.0 } },
-        '碎礫灘塗': { tempBase: 18, humidityBase: 70, windBase: 3, stabilityBias: 0, weatherTendency: { '🌫霧': 1.0 } },
-        '湖心巖島': { tempBase: 20, humidityBase: 60, windBase: 2, stabilityBias: 5, weatherTendency: {} }
-    };
-
-    // 地點 → 生物群系映射（按你的地圖補全）
-    const LOCATION_TO_BIOME = {
-        // 雪山
-        '古龍頂端': '極寒冰川', '風蝕峭壁': '寒冷山地', '冰磧斜坡': '寒冷山地',
-        // 山麓森林
-        '融雪溪谷': '溫帶森林', '靜謐溪地': '溫帶森林', '迴響松林': '溫帶森林', '交錯林緣': '溫帶森林',
-        // 丘陵
-        '漿果園丘': '溫帶丘陵', '巨石丘陵': '溫帶丘陵', '望湖臺地': '溫帶丘陵', '升風崖': '溫帶丘陵',
-        '楓葉潭': '溫帶丘陵', '斷崖瀑布': '溫帶丘陵', '巨人沉睡之地': '溫帶丘陵',
-        // 平原
-        '龜裂平原': '溫帶平原', '靜謐淺灘': '溫帶平原', '白石淺灘': '溫帶平原', '陽光溪谷': '溫帶平原',
-        // 草原
-        '聆風丘陵': '溫帶草原', '長草之海': '溫帶草原', '花海高地': '溫帶草原', '菌孢草原': '溫帶草原',
-        // 雨林 / 古木
-        '古木邊界': '熱帶雨林', '根鬚隘口': '熱帶雨林', '沉沒神廟': '熱帶雨林', '巨藤天梯': '熱帶雨林',
-        '紫杉迴廊': '熱帶雨林', '絞殺林': '熱帶雨林', '巨根高牆': '熱帶雨林', '林中空地': '熱帶雨林',
-        '林下幽光界': '熱帶雨林', '林冠之上': '熱帶雨林',
-        // 沼澤
-        '千沼之葦': '溼地/沼澤', '哀泣柳林': '溼地/沼澤', '沼澤水道': '溼地/沼澤', '瘴氣之谷': '溼地/沼澤', '菌光溼地': '溼地/沼澤',
-        // 湖
-        '環湖碎石灘': '碎礫灘塗', '星核島': '湖心巖島',
-        // 綠洲
-        '綠洲邊緣': '荒漠綠洲', '巨物之骸': '荒漠綠洲',
-        // 戈壁
-        '赤色戈壁': '赤色戈壁',
-        // 沙漠
-        '流沙之丘': '乾旱荒漠', '黃金沙海': '乾旱荒漠', '低語盆地': '乾旱荒漠', '枯骨河牀': '乾旱荒漠', '石林迷陣': '乾旱荒漠', '乾涸河谷': '乾旱荒漠',
-        // 黑曜石
-        '黑曜石之海': '黑曜石平原',
-        // 火山
-        '冷卻邊界': '活火山帶', '灰燼平原': '活火山帶', '岩漿主脈': '活火山帶', '熔岩迷宮': '活火山帶', '結晶洞窟': '活火山帶',
-        // 蘑菇林
-        '熒光邊界': '真菌森林', '巨蕈之柱': '真菌森林', '菌蓋天穹': '真菌森林', '菌絲深巢': '真菌森林',
-    };
-
-    // ==================== 特色天氣配置（按地點匹配） ====================
-    const SPECIAL_WEATHER = {
-        // 蘑菇林
-        '🌫孢子云': {
-            locations: ['巨蕈之柱', '菌蓋天穹', '菌絲深巢', '熒光邊界', '菌光溼地'],
-            condition: (atmo, vars) => atmo.stability > 10 && atmo.windLevel <= 2 && atmo.humiditySat > 60,
-            weight: 2.5
-        },
-        '🌫孢子雨': {
-            locations: ['巨蕈之柱', '菌蓋天穹', '菌絲深巢', '熒光邊界', '菌光溼地'],
-            condition: (atmo, vars) => atmo.humiditySat > 85 && atmo.windLevel <= 2 && atmo.stability > 15,
-            weight: 2.0
-        },
-        // 星核島
-        '💫磁霧': {
-            locations: ['星核島'],
-            condition: (atmo, vars) => atmo.humiditySat > 70 && isDaytime(vars),
-            weight: 1.5
-        },
-        '💫磁暴': {
-            locations: ['星核島'],
-            condition: (atmo, vars) => atmo.humiditySat > 80 && isFullMoon(vars),
-            weight: 2.0
-        },
-        // 赤色戈壁
-        '🌪血色沙塵': {
-            locations: ['赤色戈壁'],
-            condition: (atmo, vars) => atmo.humiditySat < 15 && atmo.windLevel >= 3 && atmo.stability < -20,
-            weight: 2.0
-        },
-        // 黑曜石之海
-        '🌪黑沙暴': {
-            locations: ['黑曜石之海'],
-            condition: (atmo, vars) => atmo.humiditySat < 10 && atmo.windLevel >= 3 && atmo.stability < -30,
-            weight: 2.0
-        },
-        '🌫灼光': {
-            locations: ['黑曜石之海'],
-            condition: (atmo, vars) => isDaytime(vars) && atmo.humiditySat < 10 && atmo.windLevel <= 1 && atmo.stability < -10,
-            weight: 2.5
-        },
-        // 岩漿區
-        '🔥地火': {
-            locations: ['赤色戈壁', '岩漿主脈', '冷卻邊界', '灰燼平原', '熔岩迷宮'],
-            condition: (atmo, vars) => atmo.windLevel >= 2 && atmo.humiditySat < 15,
-            weight: 1.5
-        },
-        '🌋熔岩濺射': {
-            locations: ['岩漿主脈', '熔岩迷宮'],
-            condition: (atmo, vars) => atmo.tempBaseline > 40 && atmo.stability < -30,
-            weight: 1.0
-        },
-        // 草原
-        '🌪塵捲風羣': {
-            locations: ['長草之海', '花海高地', '聆風丘陵', '菌孢草原'],
-            condition: (atmo, vars) => isDaytime(vars) && atmo.humiditySat < 25 && atmo.windLevel >= 2 && Math.abs(atmo.stability) < 20,
-            weight: 1.5
-        },
-        // 全地圖
-        '🌕月虹': {
-            locations: '*',
-            condition: (atmo, vars) => isFullMoon(vars) && atmo.humiditySat > 70 && atmo.stability > 10,
-            weight: 0.5
-        }
-    };
-
-    // ==================== 內部狀態 ====================
-
-    let atmosphere = {
-        airMass: AIR_MASS.HIGH_PRESSURE,
-        humiditySat: 40,
-        tempBaseline: 22,
-        windLevel: 1,
-        stability: 0,
-        trendCounter: 0,
-        lastDirection: null
-    };
-
-    let lastProcessedDay = 0, lastProcessedHour = 0, initialized = false;
-    let lastKnownBiome = '溫帶平原';
-    let lastKnownLocation = '';
-    let isProcessing = false;
-    let processingLockStart = 0;
-    let lastSnapshot = null;
-    let lastWeatherForTrend = '';
-
-    // ==================== 工具函數 ====================
-
-    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
-    function rand(min, max) { return Math.random() * (max - min) + min; }
-    function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
-    function chance(probability) { return Math.random() < probability; }
-
-    function getCurrentHourFloat(vars) {
-        const timeStr = _.get(vars, '系統.當前時間', '08:00');
-        const parts = timeStr.split(':');
-        return parseInt(parts[0]) + (parts.length > 1 ? parseInt(parts[1]) / 60 : 0);
-    }
-
-    function getSeasonConfig(vars) {
-        const season = _.get(vars, '環境.季節', '春季');
-        return SEASONS[season] || SEASONS['春季'];
-    }
-
-    function getCurrentBiome(vars) {
-        const location = _.get(vars, '環境.當前位置', '待定');
-        for (const place in LOCATION_TO_BIOME) {
-            if (location.includes(place)) {
-                return LOCATION_TO_BIOME[place];
-            }
-        }
-        return '溫帶平原';
-    }
-
-    function isDaytime(vars) {
-        const hour = getCurrentHourFloat(vars);
-        return hour >= 6.0 && hour <= 18.5;
-    }
-
-    function isFullMoon(vars) {
-        const moon = _.get(vars, '環境.月相', '');
-        return moon.includes('滿月');
-    }
-
-    // ==================== 月相計算 ====================
-
-    function calculateMoonPhase(vars) {
-        const day = _.get(vars, '系統.經過天數', 0);
-        const phaseIndex = day % 8;
-
-        let phase = '';
-        let emoji = '';
-
-        if (phaseIndex === 0) {
-            phase = '新月'; emoji = '🌑';
-        } else if (phaseIndex === 1 || phaseIndex === 2) {
-            phase = '上弦月'; emoji = '🌓';
-        } else if (phaseIndex === 3 || phaseIndex === 4) {
-            phase = '滿月'; emoji = '🌕';
-        } else if (phaseIndex === 5 || phaseIndex === 6) {
-            phase = '下弦月'; emoji = '🌗';
-        } else {
-            phase = '新月'; emoji = '🌑';
-        }
-
-        _.set(vars, '環境.月相', emoji + phase);
-    }
-
-    // ==================== 天氣等級系統 ====================
-
-    function getWeatherLevel(weather) {
-        const levels = {
-            '☀晴朗': 0,
-            '☁多雲': 1,
-            '⛅陰天': 2,
-            '🌧小雨': 3,
-            '🌧大雨': 4,
-            '🌩雷暴': 5,
-            '🌧豪雨': 6,
-            '❄小雪': 3,
-            '❄大雪': 4,
-            '🌪沙塵暴': 5,
-            '🌋火山灰': 5,
-            '🌪龍捲風': 6,
-            '🌀颱風': 6,
-            '❄暴風雪': 6,
-            '🌪黑沙暴': 6,
-            '🌪血色沙塵': 5,
-            '🌫灼光': 3,
-            '🔥地火': 5,
-            '🌫霧': 2,
-            '🌫毒霧': 3,
-            '🌫孢子云': 3,
-            '🌫孢子雨': 4,
-            '🌫酸霧': 4,
-            '🌫灰霾': 2,
-            '🌫瘴氣': 3,
-            '🌪塵捲風': 3,
-            '💨大風': 2,
-            '💧涼風': 1,
-            '🌧暴雨': 5,
-            '🌧驟雨': 3,
-            '💫磁霧': 3,
-            '💫磁暴': 5,
-            '🌋熔岩濺射': 5,
-            '🌪塵捲風羣': 3,
-            '🌕月虹': 0
-        };
-        return levels[weather] !== undefined ? levels[weather] : 2;
-    }
-
-    function getWeatherChain(vars) {
-        const season = _.get(vars, '環境.季節', '春季');
-        const baseChain = ['☀晴朗', '☁多雲', '⛅陰天'];
-
-        if (season === '冬季') {
-            return [...baseChain, '❄小雪', '❄大雪'];
-        }
-
-        if (season === '夏季') {
-            return [...baseChain, '🌧小雨', '🌧大雨', '🌩雷暴', '🌧豪雨'];
-        }
-
-        if (season === '春季') {
-            return [...baseChain, '🌧小雨', '🌧大雨', '🌩雷暴'];
-        }
-
-        return [...baseChain, '🌧小雨', '🌧大雨'];
-    }
-
-    // ==================== 特殊天氣清單 ====================
-
-    function isSpecialWeather(weather) {
-        const specials = [
-            '🌪沙塵暴', '🌋火山灰', '🌪龍捲風', '🌀颱風',
-            '🌪黑沙暴', '🌪血色沙塵', '🌫灼光', '🔥地火',
-            '🌫毒霧', '🌫孢子云', '🌫孢子雨', '🌫酸霧', '🌫瘴氣',
-            '🌪塵捲風', '💨大風', '💧涼風', '🌫灰霾',
-            '❄暴風雪', '🌧暴雨', '🌧驟雨',
-            '💫磁霧', '💫磁暴', '🌋熔岩濺射', '🌪塵捲風羣', '🌕月虹'
-        ];
-        return specials.includes(weather);
-    }
-
-    // ==================== 趨勢計數器 ====================
-
-    function resetTrendCounter() {
-        atmosphere.trendCounter = 0;
-        atmosphere.lastDirection = null;
-        console.log('[天氣引擎 V4.1] 📊 趨勢計數器已歸零');
-    }
-
-    // ==================== 快速放晴檢查 ====================
-
-    function checkFastClear(vars, oldWeather, newWeather) {
-        if (oldWeather === '🌧小雨' && newWeather === '⛅陰天') {
-            const roll = Math.random() * 100;
-            console.log('[天氣引擎 V4.1] ☀️ 快速放晴檢查：小雨→陰天，ROLL=' + Math.round(roll));
-
-            if (roll <= 70) {
-                console.log('[天氣引擎 V4.1] ☀️ 快速放晴觸發！陰天→多雲→晴朗 加速完成');
-
-                syncAtmosphereToWeather('☀晴朗');
-                resetTrendCounter();
-
-                return '☀晴朗';
-            } else {
-                console.log('[天氣引擎 V4.1] ☀️ 快速放晴未觸發，維持陰天（正常模式）');
-                return '⛅陰天';
-            }
-        }
-
-        return newWeather;
-    }
-
-    // ==================== 天氣→內部狀態同步 ====================
-
-    function syncAtmosphereToWeather(weather) {
-        switch(weather) {
-            case '☀晴朗':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 30;
-                atmosphere.stability = 40;
-                break;
-            case '☁多雲':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 50;
-                atmosphere.stability = 15;
-                break;
-            case '⛅陰天':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 68;
-                atmosphere.stability = -10;
-                break;
-            case '🌧小雨':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 78;
-                atmosphere.stability = -25;
-                break;
-            case '🌧大雨':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 88;
-                atmosphere.stability = -45;
-                break;
-            case '🌩雷暴':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 92;
-                atmosphere.stability = -65;
-                break;
-            case '🌧豪雨':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 96;
-                atmosphere.stability = -80;
-                break;
-            case '❄小雪':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 78;
-                atmosphere.stability = -5;
-                break;
-            case '❄大雪':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 88;
-                atmosphere.stability = -20;
-                break;
-            case '❄暴風雪':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 92;
-                atmosphere.stability = -50;
-                break;
-            case '🌪沙塵暴':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 15;
-                atmosphere.stability = -45;
-                break;
-            case '🌋火山灰':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 10;
-                atmosphere.stability = -40;
-                break;
-            case '🌫霧':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 75;
-                atmosphere.stability = 35;
-                break;
-            case '🌫毒霧':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 80;
-                atmosphere.stability = 45;
-                break;
-            case '🌫孢子云':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 82;
-                atmosphere.stability = 40;
-                break;
-            case '🌫孢子雨':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 90;
-                atmosphere.stability = 20;
-                break;
-            case '🌫酸霧':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 78;
-                atmosphere.stability = 50;
-                break;
-            case '🌫瘴氣':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 85;
-                atmosphere.stability = 55;
-                break;
-            case '🌪龍捲風':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 85;
-                atmosphere.stability = -90;
-                break;
-            case '🌀颱風':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 95;
-                atmosphere.stability = -95;
-                break;
-            case '🌪黑沙暴':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 10;
-                atmosphere.stability = -60;
-                break;
-            case '🌪血色沙塵':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 12;
-                atmosphere.stability = -55;
-                break;
-            case '🌫灼光':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 5;
-                atmosphere.stability = -15;
-                break;
-            case '🔥地火':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 8;
-                atmosphere.stability = -30;
-                break;
-            case '🌫灰霾':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 35;
-                atmosphere.stability = 30;
-                break;
-            case '🌪塵捲風':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 20;
-                atmosphere.stability = 10;
-                break;
-            case '💨大風':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 70;
-                atmosphere.stability = -15;
-                break;
-            case '💧涼風':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 40;
-                atmosphere.stability = 20;
-                break;
-            case '🌧暴雨':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 94;
-                atmosphere.stability = -70;
-                break;
-            case '🌧驟雨':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 92;
-                atmosphere.stability = -30;
-                break;
-            case '💫磁霧':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 75;
-                atmosphere.stability = 20;
-                break;
-            case '💫磁暴':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 85;
-                atmosphere.stability = -40;
-                break;
-            case '🌋熔岩濺射':
-                atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-                atmosphere.humiditySat = 5;
-                atmosphere.stability = -60;
-                break;
-            case '🌪塵捲風羣':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 20;
-                atmosphere.stability = 5;
-                break;
-            case '🌕月虹':
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 75;
-                atmosphere.stability = 30;
-                break;
-            default:
-                atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-                atmosphere.humiditySat = 40;
-                atmosphere.stability = 20;
-        }
-        atmosphere.humiditySat = clamp(atmosphere.humiditySat, 5, 98);
-        atmosphere.stability = clamp(atmosphere.stability, -100, 100);
-
-        console.log('[天氣引擎 V4.1] 🔄 同步完成：' + weather +
-            ' | 氣團=' + atmosphere.airMass +
-            ' | 濕度=' + Math.round(atmosphere.humiditySat) +
-            ' | 穩定度=' + Math.round(atmosphere.stability));
-    }
-
-    // ==================== 跨地圖 Roll 點 ====================
-
-    // 明確接收 biome 參數，避免依賴 lastKnownBiome 的更新時序
-    function rollWeatherForNewBiome(vars, biomeName) {
-        const biome = BIOMES[biomeName] || BIOMES['溫帶平原'];
-
-        let goodChance = 50;
-
-        if (atmosphere.airMass === '高壓') goodChance += 20;
-        else if (atmosphere.airMass === '低壓') goodChance -= 20;
-
-        goodChance += biome.stabilityBias * 0.3;
-
-        const season = _.get(vars, '環境.季節', '春季');
-        if (season === '春季') goodChance += 5;
-        else if (season === '夏季') goodChance -= 10;
-        else if (season === '冬季') goodChance -= 15;
-
-        goodChance = clamp(goodChance, 10, 90);
-
-        const roll = Math.random() * 100;
-        const isGood = roll < goodChance;
-
-        console.log('[天氣引擎 V4.1] 🎲 跨地圖 Roll 點：' + Math.round(roll) + ' → ' + (isGood ? '好天氣 ✅' : '壞天氣 ❌') + ' (機率' + Math.round(goodChance) + '%)');
-
-        if (isGood) {
-            atmosphere.airMass = AIR_MASS.HIGH_PRESSURE;
-            atmosphere.humiditySat = clamp(atmosphere.humiditySat - rand(10, 20), 10, 60);
-            atmosphere.stability = clamp(atmosphere.stability + rand(5, 15), -50, 100);
-        } else {
-            atmosphere.airMass = AIR_MASS.LOW_PRESSURE;
-            atmosphere.humiditySat = clamp(atmosphere.humiditySat + rand(10, 20), 40, 95);
-            atmosphere.stability = clamp(atmosphere.stability - rand(5, 15), -100, 50);
-        }
-
-        atmosphere.tempBaseline += (biome.tempBase - atmosphere.tempBaseline) * 0.3;
-        atmosphere.windLevel = biome.windBase;
-
-        atmosphere.humiditySat = clamp(atmosphere.humiditySat, 5, 98);
-        atmosphere.stability = clamp(atmosphere.stability, -100, 100);
-        atmosphere.tempBaseline = clamp(atmosphere.tempBaseline, -30, 60);
-    }
-
-    // ==================== 特色天氣檢查（按地點匹配） ====================
-
-    function checkBiomeSpecificWeather(vars) {
-        const loc = _.get(vars, '環境.當前位置', '');
-        if (!loc) return null;
-
-        for (const [weatherName, cfg] of Object.entries(SPECIAL_WEATHER)) {
-            // 地點匹配
-            if (cfg.locations !== '*') {
-                const list = Array.isArray(cfg.locations) ? cfg.locations : [cfg.locations];
-                const matched = list.some(name => loc.includes(name) || name.includes(loc));
-                if (!matched) continue;
-            }
-
-            // 條件匹配
-            if (!cfg.condition(atmosphere, vars)) continue;
-
-            // 權重骰
-            if (Math.random() < cfg.weight * 0.3) {
-                return weatherName;
-            }
-        }
-
-        return null;
-    }
-
-    // ==================== 推導天氣 ====================
-
-    function deriveWeather(vars) {
-        const season = _.get(vars, '環境.季節', '春季');
-
-        if (season === '冬季') {
-            if (atmosphere.airMass === '高壓') {
-                if (atmosphere.humiditySat < 40) return '☀晴朗';
-                if (atmosphere.humiditySat < 60) return '☁多雲';
-                return '⛅陰天';
-            } else {
-                if (atmosphere.humiditySat < 55) return '☁多雲';
-                if (atmosphere.humiditySat < 75) return '⛅陰天';
-                if (atmosphere.humiditySat < 88) return '❄小雪';
-                return '❄大雪';
-            }
-        }
-
-        for (const rule of WEATHER_RULES) {
-            const c = rule.cond;
-            if (c.airMass && c.airMass !== atmosphere.airMass) continue;
-            if (c.humidityMin !== undefined && atmosphere.humiditySat < c.humidityMin) continue;
-            if (c.humidityMax !== undefined && atmosphere.humiditySat > c.humidityMax) continue;
-            return rule.weather;
-        }
-        return atmosphere.airMass === AIR_MASS.HIGH_PRESSURE ? '☀晴朗' : '☁多雲';
-    }
-
-    function deriveWeatherWithTrend(vars) {
-        const special = checkBiomeSpecificWeather(vars);
-        if (special) {
-            return special;
-        }
-
-        let baseWeather = deriveWeather(vars);
-
-        if (atmosphere.trendCounter === 0 || !atmosphere.lastDirection) {
-            return baseWeather;
-        }
-
-        const chain = getWeatherChain(vars);
-        const idx = chain.indexOf(baseWeather);
-
-        if (idx === -1) {
-            return baseWeather;
-        }
-
-        const trendMod = atmosphere.trendCounter * 10;
-        let chanceToFollowTrend = Math.min(30 + trendMod, 80);
-
-        if (Math.random() * 100 < chanceToFollowTrend) {
-            if (atmosphere.lastDirection === '惡化' && idx < chain.length - 1) {
-                return chain[idx + 1];
-            } else if (atmosphere.lastDirection === '好轉' && idx > 0) {
-                return chain[idx - 1];
-            }
-        }
-
-        return baseWeather;
-    }
-
-    // ==================== 天氣簡報 ====================
-
-    function buildWeatherBrief(vars, weather, oldWeather, prevTime) {
-        const season = _.get(vars, '環境.季節', '春季');
-        const time = _.get(vars, '系統.當前時間', '08:00');
-        const temp = Math.round(atmosphere.tempBaseline);
-        const oldTemp = Math.round(_.get(vars, '環境.氣溫', temp));
-        const moon = _.get(vars, '環境.月相', '');
-        const loc = _.get(vars, '環境.當前位置', '');
-
-        const seasonDesc = {
-            '春季': '暖和多雨',
-            '夏季': '炎熱多雷雨',
-            '秋季': '涼爽乾燥',
-            '冬季': '寒冷少雨'
-        }[season] || '';
-
-        let change = '維持不變';
-        if (oldWeather && oldWeather !== weather) {
-            const oldLevel = getWeatherLevel(oldWeather);
-            const newLevel = getWeatherLevel(weather);
-            if (newLevel > oldLevel) change = '惡化';
-            else if (newLevel < oldLevel) change = '轉晴';
-        }
-
-        // 用傳入的 prevTime 判斷白天/夜晚切換
-        const prevHour = prevTime ? parseInt(prevTime.split(':')[0]) : -1;
-        const curHour = parseInt(time.split(':')[0]);
-        const wasDay = prevHour >= 6 && prevHour <= 18;
-        const isDay = curHour >= 6 && curHour <= 18;
-
-        if (prevHour >= 0) {
-            if (wasDay && !isDay) change = '轉夜晚';
-            else if (!wasDay && isDay) change = '轉天亮';
-        }
-
-        let brief = `地點：${loc}。`;
-        brief += `季節：${season}，氣候${seasonDesc}。`;
-        brief += `天氣：${change}`;
-
-        if (change === '維持不變') {
-            brief += `，${weather}`;
-        } else {
-            brief += `，將轉為：${weather}`;
-        }
-
-        brief += `，氣溫 ${oldTemp}→${temp}。`;
-        if (moon) brief += `月相：${moon}。`;
-        brief += `時間：${time}。`;
-
-        _.set(vars, '環境.天氣簡報', brief);
-    }
-
-    // ==================== 體感溫度計算 ====================
-
-    function calculateFeltTemperature(vars, baseTemp, windLevel, humidity) {
-        let felt = baseTemp;
-
-        // 風寒效應（低溫 + 強風）
-        if (baseTemp < 10) {
-            felt -= windLevel * 1.5;
-        }
-        // 濕熱效應（高溫 + 高濕）
-        else if (baseTemp > 30) {
-            felt += (humidity - 50) * 0.05;
-            felt += windLevel * 0.5;
-        }
-        // 常溫：風速微調
-        else {
-            if (windLevel >= 3) felt -= windLevel * 0.5;
-        }
-
-        return Math.round(felt);
-    }
-
-    // ==================== 環境寫入 ====================
-
-    function writeEnv(vars, weather, modifiedBy) {
-        const ws = WIND_LEVELS[atmosphere.windLevel] || '微風';
-        const at = Math.round(atmosphere.tempBaseline);
-
-        // 夜間天氣轉換
-        let displayWeather = weather;
-        if (!isDaytime(vars) && weather === '☀晴朗') {
-            displayWeather = '🌙晴朗';
-        }
-
-        let brightness = '中等';
-        if (isDaytime(vars)) {
-            brightness = weather.includes('雨') || weather.includes('陰') || weather.includes('雪') || weather.includes('霧') ? '中等' : '強光';
-        } else {
-            brightness = '無光';
-        }
-
-        // 趨勢計數器
-        const oldWeather = lastWeatherForTrend || _.get(vars, '環境.天氣', '');
-        const newWeather = weather;
-
-        const newIsSpecial = isSpecialWeather(newWeather);
-        const oldIsSpecial = isSpecialWeather(oldWeather);
-
-        if (newIsSpecial) {
-            resetTrendCounter();
-            console.log('[天氣引擎 V4.1] 📊 特殊天氣觸發，計數器歸零：' + newWeather);
-        } else if (oldWeather && oldWeather !== newWeather && !oldIsSpecial) {
-            const oldLevel = getWeatherLevel(oldWeather);
-            const newLevel = getWeatherLevel(newWeather);
-
-            let direction = '穩定';
-            if (newLevel > oldLevel) direction = '惡化';
-            else if (newLevel < oldLevel) direction = '好轉';
-
-            if (direction !== '穩定') {
-                if (atmosphere.lastDirection === direction) {
-                    atmosphere.trendCounter = Math.min(atmosphere.trendCounter + 1, 3);
-                } else {
-                    atmosphere.trendCounter = 0;
-                }
-                atmosphere.lastDirection = direction;
-                console.log('[天氣引擎 V4.1] 📊 趨勢更新：' +
-                    oldWeather + ' → ' + newWeather +
-                    ' (' + direction + ')' +
-                    ' 計數器=' + atmosphere.trendCounter + '/3');
-            }
-        } else if (oldWeather && oldWeather !== newWeather && oldIsSpecial) {
-            console.log('[天氣引擎 V4.1] 📊 從特殊天氣恢復，不計入趨勢：' +
-                oldWeather + ' → ' + newWeather);
-        }
-
-        lastWeatherForTrend = newWeather;
-
-        // 寫入環境變量
-        _.set(vars, '環境.天氣', weather);
-        _.set(vars, '環境.亮度', brightness);
-        _.set(vars, '環境.風速', ws);
-        _.set(vars, '環境.氣溫', at);
-
-        const feltTemp = calculateFeltTemperature(vars, at, atmosphere.windLevel, atmosphere.humiditySat);
-        _.set(vars, '環境.體感溫度', feltTemp);
-
-        _.set(vars, '環境.$氣團', atmosphere.airMass);
-        _.set(vars, '環境.$濕度', Math.round(atmosphere.humiditySat));
-        _.set(vars, '環境.$穩定度', Math.round(atmosphere.stability));
-        _.set(vars, '環境.$趨勢計數器', atmosphere.trendCounter);
-        _.set(vars, '環境.$上次趨勢方向', atmosphere.lastDirection || '無');
-
-        // ========== 月相 + 天氣簡報 ==========
-        calculateMoonPhase(vars);
-
-        // 先讀取「前次時間」，再寫入新的「前次時間」
-        const oldWeatherForBrief = oldWeather;
-        const prevTime = _.get(vars, '系統.前次時間', '');
-        buildWeatherBrief(vars, weather, oldWeatherForBrief, prevTime);
-        _.set(vars, '系統.前次時間', _.get(vars, '系統.當前時間', '08:00'));
-        // ========== 結束 ==========
-
-        const snapshot = {
-            天氣: weather,
-            風速: ws,
-            氣溫: at,
-            季節: _.get(vars, '環境.季節', '春季'),
-            修改者: modifiedBy || '未知',
-            時間戳: Date.now(),
-            天數: _.get(vars, '系統.經過天數', 0),
-            趨勢計數器: atmosphere.trendCounter,
-            趨勢方向: atmosphere.lastDirection || '無'
-        };
-        _.set(vars, '環境.$天氣快照', JSON.stringify(snapshot));
-        lastSnapshot = snapshot;
-
-        console.log('[天氣引擎 V4.1] 📸 快照更新：' + weather +
-            ' (修改者：' + (modifiedBy || '未知') +
-            ' | 趨勢：' + (atmosphere.lastDirection || '無') +
-            ' [' + atmosphere.trendCounter + '/3])');
-
-        // ========== 天氣變化總結 ==========
-        const prevWeather = oldWeather || '（無）';
-        if (prevWeather !== weather) {
-            console.log('[天氣引擎 V4.1] 🌤️ 天氣變化：' + prevWeather + ' → ' + weather +
-                ' | 修改者=' + (modifiedBy || '未知') +
-                ' | 地點=' + _.get(vars, '環境.當前位置', '') +
-                ' | 氣溫=' + at + '°C');
-        } else {
-            console.log('[天氣引擎 V4.1] 🌤️ 天氣維持：' + weather +
-                ' | 修改者=' + (modifiedBy || '未知') +
-                ' | 地點=' + _.get(vars, '環境.當前位置', '') +
-                ' | 氣溫=' + at + '°C' +
-                ' | 體感=' + feltTemp + '°C');
-        }
-        // ========== 總結結束 ==========
-    }
-
-    // ==================== AI Override 處理（抽成獨立函數） ====================
-
-    // 回傳處理後的天氣，並負責寫入 vars
-    function handleAIOverride(sd, currentWeather) {
-        console.log('[天氣引擎 V4.1] 🟢 AI 修改天氣：' + currentWeather);
-        syncAtmosphereToWeather(currentWeather);
-
-        let finalWeather = currentWeather;
-        let modifiedBy = 'AI';
-
-        const special = checkBiomeSpecificWeather(sd);
-        if (special) {
-            console.log('[天氣引擎 V4.1] 🟠 特殊天氣覆蓋：' + special);
-            finalWeather = special;
-            modifiedBy = '引擎(特殊天氣)';
-            syncAtmosphereToWeather(special);
-        }
-
-        const oldWeather = lastWeatherForTrend || _.get(sd, '環境.天氣', '');
-        const fastClearResult = checkFastClear(sd, oldWeather, finalWeather);
-        if (fastClearResult !== finalWeather) {
-            finalWeather = fastClearResult;
-            modifiedBy = '引擎(快速放晴)';
-        }
-
-        writeEnv(sd, finalWeather, modifiedBy);
-    }
-
-    // ==================== 主處理 ====================
-
-    function processWeather(vars, hoursPassed) {
-        const currentWeather = _.get(vars, '環境.天氣', '');
-        const currentLocation = _.get(vars, '環境.當前位置', '');
-        let finalWeather = currentWeather;
-        let modifiedBy = '引擎';
-
-        const isLocationChanged = currentLocation !== lastKnownLocation;
-
-        if (isLocationChanged) {
-            console.log('[天氣引擎 V4.1] 🏔️ 跨地圖：' + lastKnownLocation + ' → ' + currentLocation);
-
-            // 先算出新 biome，明確傳給 rollWeatherForNewBiome
-            const newBiome = getCurrentBiome(vars);
-
-            lastKnownLocation = currentLocation;
-            lastKnownBiome = newBiome;
-
-            rollWeatherForNewBiome(vars, newBiome);
-
-            finalWeather = deriveWeather(vars);
-            modifiedBy = '引擎(跨地圖)';
-
-            writeEnv(vars, finalWeather, modifiedBy);
-            return;
-        }
-
-        // AI override 判斷
-        const snapshotStr = _.get(vars, '環境.$天氣快照', '');
-        let isAIOverride = false;
-
-        if (snapshotStr && currentWeather) {
-            try {
-                const snap = JSON.parse(snapshotStr);
-                if (currentWeather !== snap.天氣) {
-                    isAIOverride = true;
-                    console.log('[天氣引擎 V4.1] 🟢 檢測到 AI 修改天氣：' + snap.天氣 + ' → ' + currentWeather);
-                }
-            } catch(e) {}
-        } else if (currentWeather) {
-            isAIOverride = true;
-        }
-
-        if (isAIOverride && currentWeather) {
-            handleAIOverride(vars, currentWeather);
-            return;
-        }
-
-        if (hoursPassed > 0) {
-            let humidityChange = 0;
-            if (atmosphere.airMass === '高壓') {
-                humidityChange = -0.5 * hoursPassed;
-            } else {
-                humidityChange = 0.5 * hoursPassed;
-            }
-            atmosphere.humiditySat = clamp(atmosphere.humiditySat + humidityChange, 5, 98);
-
-            const seasonCfg = getSeasonConfig(vars);
-            const targetTemp = (seasonCfg.tempRange[0] + seasonCfg.tempRange[1]) / 2;
-            atmosphere.tempBaseline += (targetTemp - atmosphere.tempBaseline) * Math.min(0.05 * hoursPassed, 0.3);
-            atmosphere.tempBaseline = clamp(atmosphere.tempBaseline, -30, 60);
-        }
-
-        // 推演天氣
-        let derivedWeather = deriveWeatherWithTrend(vars);
-
-        // 檢查快速放晴
-        const oldWeather = lastWeatherForTrend || _.get(vars, '環境.天氣', '');
-        const fastClearResult = checkFastClear(vars, oldWeather, derivedWeather);
-        if (fastClearResult !== derivedWeather) {
-            derivedWeather = fastClearResult;
-            modifiedBy = '引擎(快速放晴)';
-        } else {
-            modifiedBy = '引擎(正常推演)';
-        }
-
-        writeEnv(vars, derivedWeather, modifiedBy);
-    }
-
-    // ==================== 初始化 ====================
-
-    function performInit(sd, curDay, curHour) {
-        const currentBiome = getCurrentBiome(sd);
-        const biomeCfg = BIOMES[currentBiome] || BIOMES['溫帶平原'];
-        lastKnownBiome = currentBiome;
-        lastKnownLocation = _.get(sd, '環境.當前位置', '');
-
-        const season = _.get(sd, '環境.季節', '春季');
-        const seasonCfg = SEASONS[season] || SEASONS['春季'];
-
-        const existingWeather = _.get(sd, '環境.天氣', '');
-
-        // 氣溫 fallback 用季節平均值
-        const defaultTemp = Math.round((seasonCfg.tempRange[0] + seasonCfg.tempRange[1]) / 2);
-        const existingTemp = Math.round(_.get(sd, '環境.氣溫', defaultTemp));
-
-        if (existingWeather) {
-            syncAtmosphereToWeather(existingWeather);
-            atmosphere.tempBaseline = existingTemp;
-            lastWeatherForTrend = existingWeather;
-        } else {
-            const pressureBias = seasonCfg.highPressureBias;
-            atmosphere.airMass = pressureBias > 0.5 ? AIR_MASS.HIGH_PRESSURE : AIR_MASS.LOW_PRESSURE;
-            atmosphere.humiditySat = clamp(biomeCfg.humidityBase + rand(-5, 5), 5, 98);
-            atmosphere.tempBaseline = existingTemp;
-            atmosphere.windLevel = biomeCfg.windBase || 1;
-            atmosphere.stability = (seasonCfg.stabilityBias || 0) * 0.5 + (biomeCfg.stabilityBias || 0) * 0.5;
-            atmosphere.stability = clamp(atmosphere.stability + rand(-10, 10), -100, 100);
-            resetTrendCounter();
-        }
-
-        const weather = deriveWeather(sd);
-        writeEnv(sd, weather, '引擎(初始化)');
-
-        console.log('[天氣引擎 V4.1] 初始化完成：地理=' + currentBiome + ' 天氣=' + weather +
-            ' 氣溫=' + Math.round(atmosphere.tempBaseline) + '°C');
-    }
-
-    // ==================== 自動觸發 ====================
-
-    function tryAutoProcess(newVars) {
-        if (isProcessing && (Date.now() - processingLockStart) > 5000) {
-            console.warn('[天氣引擎 V4.1] 處理鎖超時，強制釋放');
-            isProcessing = false;
-        }
-        if (isProcessing) return;
-        isProcessing = true;
-        processingLockStart = Date.now();
-
-        try {
-            const sd = newVars.stat_data;
-            if (!sd) return;
-
-            const curDay = _.get(sd, '系統.經過天數', 0);
-            const curTime = _.get(sd, '系統.當前時間', '08:00');
-            const curParts = curTime.split(':');
-            const curHour = parseInt(curParts[0]) + (curParts.length > 1 ? parseInt(curParts[1]) / 60 : 0);
-
-            if (initialized && (curDay < lastProcessedDay || (curDay === lastProcessedDay && curHour < lastProcessedHour))) {
-                console.log('[天氣引擎 V4.1] ⚠️ 偵測到時間倒退（可能刪樓），清除快照');
-                _.set(sd, '環境.$天氣快照', '');
-                _.set(sd, '環境.$氣團', undefined);
-                _.set(sd, '環境.$濕度', undefined);
-                _.set(sd, '環境.$穩定度', undefined);
-                _.set(sd, '環境.$趨勢計數器', undefined);
-                _.set(sd, '環境.$上次趨勢方向', undefined);
-                lastSnapshot = null;
-                lastWeatherForTrend = '';
-                resetTrendCounter();
-                initialized = false;
-                return;
-            }
-
-            if (!initialized) {
-                initialized = true;
-                lastProcessedDay = curDay;
-                lastProcessedHour = curHour;
-                lastKnownLocation = _.get(sd, '環境.當前位置', '');
-                lastKnownBiome = getCurrentBiome(sd);
-
-                const savedSnapshot = _.get(sd, '環境.$天氣快照', '');
-                if (savedSnapshot) {
-                    try {
-                        const snap = JSON.parse(savedSnapshot);
-                        const snapWeather = snap.天氣;
-                        if (snapWeather) {
-                            syncAtmosphereToWeather(snapWeather);
-                            atmosphere.tempBaseline = snap.氣溫 || 22;
-                            atmosphere.trendCounter = snap.趨勢計數器 || 0;
-                            atmosphere.lastDirection = snap.趨勢方向 || null;
-                            lastWeatherForTrend = snapWeather;
-                            console.log('[天氣引擎 V4.1] 從快照恢復狀態：' + snapWeather +
-                                ' 趨勢：' + (atmosphere.lastDirection || '無') +
-                                ' [' + atmosphere.trendCounter + '/3]');
-                        }
-                    } catch(e) {}
-                }
-
-                const currentWeather = _.get(sd, '環境.天氣', '');
-                if (!currentWeather) {
-                    performInit(sd, curDay, curHour);
-                } else {
-                    syncAtmosphereToWeather(currentWeather);
-                    atmosphere.tempBaseline = _.get(sd, '環境.氣溫', 22);
-                    lastWeatherForTrend = currentWeather;
-                    writeEnv(sd, currentWeather, '引擎(恢復)');
-                }
-
-                console.log('[天氣引擎 V4.1] 初始化完成');
-                return;
-            }
-
-            const hoursPassed = (curDay - lastProcessedDay) * 24 + (curHour - lastProcessedHour);
-
-            if (hoursPassed > 0) {
-                const snapStr = _.get(sd, '環境.$天氣快照', '');
-                const currentWeather = _.get(sd, '環境.天氣', '');
-                let isAIOverride = false;
-
-                if (snapStr && currentWeather) {
-                    try {
-                        const snap = JSON.parse(snapStr);
-                        if (currentWeather !== snap.天氣) {
-                            isAIOverride = true;
-                        }
-                    } catch(e) {}
-                }
-
-                if (isAIOverride && currentWeather) {
-                    handleAIOverride(sd, currentWeather);
-                } else {
-                    processWeather(sd, hoursPassed);
-                }
-
-                lastProcessedDay = curDay;
-                lastProcessedHour = curHour;
-            } else if (hoursPassed < 0) {
-                lastProcessedDay = curDay;
-                lastProcessedHour = curHour;
-                console.log('[天氣引擎 V4.1] 時間倒退，重置基準=' + curTime);
-            }
-        } catch (e) {
-            console.error('[天氣引擎 V4.1] 失敗:', e);
-        } finally {
-            isProcessing = false;
-        }
-    }
-
-    // ==================== 事件掛載 ====================
-
-    if (typeof eventOn === 'function') {
-        eventOn(Mvu.events.VARIABLE_UPDATE_ENDED, function(newVars) {
-            setTimeout(function() { tryAutoProcess(newVars); }, 0);
-        });
-        console.log('✅ 自然環境模擬引擎 V4.1 已加載（完整版）');
-        console.log('📊 功能：AI主導天氣 | 跨地圖Roll點 | 特殊天氣 | 快照記錄 | 趨勢計數器 | 冬季降雪 | 快速放晴 | 月相 | 天氣簡報');
-    } else {
-        console.warn('[天氣引擎 V4.1] eventOn 不可用');
-    }
-})();
+■ 139FM有声小说.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ AttributeError: 'Spider' object has no attribute 'log' [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ 18J.py  [⚫ 死透]
+  站點: https://18j.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 1905电影.py  [🟠 環境限制]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ HTTPError: HTTP Error 403: Forbidden [env_limit]
+  detail  : —
+  player  : —
+
+■ 30jujiwang.py  [⚫ 死透]
+  站點: http://www.30juz.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 2
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 169bbs0625.py  [🔴 結構壞]
+  站點: https://169bbs.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 18J_2.py  [⚫ 死透]
+  站點: https://18j.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 51K看片.py  [⚫ 死透]
+  站點: https://a9a1.91003.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 18
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 58yingshi.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 51Fans.py  [⚫ 死透]
+  站點: https://m.fansg.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 6080xinshijue.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 17
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 91.py  [🟡 待確認]
+  站點: https://91-short.com
+  load    : ✅
+  init    : ✅
+  home    : ❌ RuntimeError: fetch failed: URLError: <urlopen error [Errno 11001] getaddrinfo failed> [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ 8x8xav.py  [🔴 結構壞]
+  站點: https://8x8xav.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 911爆料网_3.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 18
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 55yingyuan_guanti.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 41
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 911爆料网.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 18
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 91n.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 91Porn.py  [🔴 結構壞]
+  站點: https://91porn.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ❌ TypeError: can only concatenate str (not "NoneType") to str [structural]
+  detail  : —
+  player  : —
+
+■ 911爆料网_4.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 18
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 91porna(OK适配精简版).py  [🟡 待確認]
+  站點: https://91porna.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ SSLError: HTTPSConnectionPool(host='91porna.com', port=443): Max retries exceeded with url: /comic/index/video?category=play (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1018)'))) [pending]
+  detail  : —
+  player  : —
+
+■ 91porna(OK适配精简版)_2.py  [🟡 待確認]
+  站點: https://91porna.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ SSLError: HTTPSConnectionPool(host='91porna.com', port=443): Max retries exceeded with url: /comic/index/video?category=play (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1018)'))) [pending]
+  detail  : —
+  player  : —
+
+■ 91热爆.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ AttributeError: 'Spider' object has no attribute 'log' [structural]
+  detail  : —
+  player  : —
+
+■ 91热爆_3.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ AttributeError: 'Spider' object has no attribute 'log' [structural]
+  detail  : —
+  player  : —
+
+■ 99短剧网.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 91情报局.py  [⚫ 死透]
+  站點: https://youliaoqbj8147351.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 15
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ AdultPorna.py  [⚫ 死透]
+  站點: https://www.adultporna-av107.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Aidianying.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Aidianying_2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 91大赛.py  [⚫ 死透]
+  站點: https://alone.cmxzettb.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ✅ 列表 14
+  detail  : ✅ 佳木斯新玛特迪桑特事件后续 八分钟视频持续曝光 刘佳卖肉换业绩 练瑜伽只为吸引大哥 热度持续上升
+  player  : ❌ play_url 格式怪：https://hls.wjifzwo.cn/videos5/528ccbbba [dead]
+
+■ AEX短剧.py  [🟢 合格]
+  站點: https://aex.686235.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ✅ 列表 20
+  detail  : ✅ MD淫欲游戏王EP6-情欲射龙门-节目篇&性爱篇
+  player  : ✅ parse=0
+
+■ AirAV.py  [⚫ 死透]
+  站點: https://airavingg6.work
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ AirAV_2.py  [⚫ 死透]
+  站點: https://airavingg6.work
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Aueteyingshi.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 11
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ avgood.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 30
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ aniget.py  [⚫ 死透]
+  站點: https://aniget.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ avple.py  [⚫ 死透]
+  站點: https://avple.tv, https://www.avple.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 34
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ ayk.py  [⚫ 死透]
+  站點: https://ayk.rxyy8.buzz, https://ayk.rxyy8.buzz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ✅ 列表 55
+  detail  : ✅ NASK227 熟母沦陷 巨乳老妇被儿子狂干内射
+  player  : ❌ play_url 格式怪：https://2609.fhv2026.com/20261006/QbSWof [dead]
+
+■ Bad.news.py  [🔴 結構壞]
+  站點: https://bad.news
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ 分類沒有 type_id [structural]
+  detail  : —
+  player  : —
+
+■ bajiaojuchang.py  [⚫ 死透]
+  站點: https://www.fesall.net
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ btdy.py  [⚫ 死透]
+  站點: https://dy.8ttv.cn
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ bubu.py  [🟡 待確認]
+  站點: https://bubutv.top/
+  load    : ✅
+  init    : ✅
+  home    : ❌ JSONDecodeError: Expecting value: line 1 column 1 (char 0) [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ B站番剧.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ AttributeError: 'FakeResponse' object has no attribute 'cookies' [structural]
+  detail  : —
+  player  : —
+
+■ B站视频.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ AttributeError: 'FakeResponse' object has no attribute 'cookies' [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ B站视频_2.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ AttributeError: 'FakeResponse' object has no attribute 'cookies' [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ caomeiyingshi.py  [⚫ 死透]
+  站點: https://artcoast.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 20
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Cosplaytele.py  [⚫ 死透]
+  站點: https://cosplaytele.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 11
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 123视频.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ apyh.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ AV女优馆.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ CYJ短剧.py  [⚫ 死透]
+  站點: https://cyj.686235.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 40
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ crly52.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ dajiji.py  [⚫ 死透]
+  站點: https://ccc.djj88.sbs
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 13
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ dajiji_2.py  [⚫ 死透]
+  站點: https://ccc.djj88.sbs
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 13
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Didi长视频.py  [⚫ 死透]
+  站點: https://gms.didicsp6.casa
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ dantaTV.py  [⚫ 死透]
+  站點: https://www.dantatv.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ djyz51.py  [⚫ 死透]
+  站點: https://k7l8m9n0.djyz51.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ DJGEM音乐网.py  [⚫ 死透]
+  站點: https://m.djgem.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ ddk.py  [⚫ 死透]
+  站點: https://ddk.sbydd7.beauty, https://ddk.sbydd7.beauty
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ✅ 列表 67
+  detail  : ✅ 真实母子乱伦母亲要出门儿子鸡巴忍不住硬是不让母亲出门大鸡巴儿子让熟女妈妈穿上丝袜操无套啪啪内射妈妈老逼HD
+  player  : ❌ play_url 格式怪：https://iuewgnbvk.com/20261006/A5zApRcv/ [dead]
+
+■ DSYS.py  [🔴 結構壞]
+  站點: https://api.230110.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 11
+  category: ❌ TypeError: argument of type 'int' is not iterable [structural]
+  detail  : —
+  player  : —
+
+■ duoduoyingshi.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ✅ 列表 24
+  detail  : ✅ 疯狂动物城2
+  player  : ❌ url 是假連結： [dead]
+
+■ EMBY.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ EMBY_2.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ EMK短剧.py  [⚫ 死透]
+  站點: https://emk.686235.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ djyz51_2.py  [⚫ 死透]
+  站點: https://k7l8m9n0.djyz51.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ fandaziyingshi.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 26
+  category: ✅ 列表 89
+  detail  : ✅ 空枪（抢先版） TC中字
+  player  : ❌ url 是假連結： [dead]
+
+■ FeiApp.py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ❌ ValueError: unknown url type: '/api.php?type=getsort' [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ fengshangyingshi.py  [🔴 結構壞]
+  站點: https://www.probabyml.com
+  load    : ✅
+  init    : ✅
+  home    : ❌ AttributeError: 'Spider' object has no attribute 'log' [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ crly52_2.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ EBA Video.py  [⚫ 死透]
+  站點: https://ebavideo.online
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 30
+  category: ✅ 列表 60
+  detail  : ❌ list 為空 [dead]
+  player  : —
+
+■ FIP短剧.py  [🟢 合格]
+  站點: https://fip.539582.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ✅ 列表 20
+  detail  : ✅ RAS-0343 中秋烤肉性爱游戏 金髮妹酒后大喷发
+  player  : ✅ parse=0
+
+■ Fulao2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ✅ 列表 146
+  detail  : ❌ list 為空 [dead]
+  player  : —
+
+■ Gimy剧迷.py  [🔴 結構壞]
+  站點: https://gimyai.tw
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ AttributeError: 'Spider' object has no attribute 'html' [structural]
+  detail  : —
+  player  : —
+
+■ Gimy劇迷.py  [⚫ 死透]
+  站點: https://gimy.now
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 18
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Hanime.py  [⚫ 死透]
+  站點: https://down.nigx.cn/hanime1.me
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Hanime1.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 241
+  category: ✅ 列表 61
+  detail  : ❌ list 為空 [dead]
+  player  : —
+
+■ HCS短剧.py  [🟢 合格]
+  站點: https://hcs.686235.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ✅ 列表 16
+  detail  : ✅ 91YCM013 被肉食人妻榨干 巧菲 玩弄湿哒哒嫩穴 女上位极品白虎律动榨精 太上头了
+  player  : ✅ parse=0
+
+■ HollyMovieHD.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Fixed_Title_Spider.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ HuoPorn.py  [⚫ 死透]
+  站點: https://www.huoporn.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 19
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ IFN影视.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ✅ 列表 30
+  detail  : ✅ 坠落2：死点
+  player  : ❌ url 是假連結： [dead]
+
+■ IMXVOD影视.py  [⚫ 死透]
+  站點: https://imxvod.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ ITalkBB TV.py  [🔴 結構壞]
+  站點: https://www.italkbbtv.com
+  load    : ✅
+  init    : ✅
+  home    : ❌ TypeError: 'NoneType' object is not iterable [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ JableTV_3.py  [⚫ 死透]
+  站點: https://jable.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Jable直播放.py  [⚫ 死透]
+  站點: https://jable.sbs
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 15
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ JavGG.py  [🔴 結構壞]
+  站點: https://javgg.co
+  load    : ✅
+  init    : ✅
+  home    : ❌ 回傳 str [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ JavMove.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ 回傳 str [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ JAVRYO.py  [⚫ 死透]
+  站點: https://javryo.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ javxx.py  [⚫ 死透]
+  站點: https://javxx.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ JAV目录.py  [⚫ 死透]
+  站點: https://javmenu.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ✅ 列表 24
+  detail  : ✅ 文尼站長
+  player  : ❌ play_url 格式怪：https://t.me/secretwebmaster [dead]
+
+■ jd4k.py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ❌ ValueError: unknown url type: '/api.php?type=getsort' [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ kaiduanyingshi.py  [🟡 待確認]
+  站點: https://api.kaiduan.fun
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ RuntimeError: fetch failed: UnicodeEncodeError: 'ascii' codec can't encode characters in position 47-48: ordinal not in range(128) [pending]
+  detail  : —
+  player  : —
+
+■ E佬音乐.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ Kemono.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ✅ 列表 1
+  detail  : ❌ list 為空 [dead]
+  player  : —
+
+■ Kemono_3.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ✅ 列表 1
+  detail  : ❌ list 為空 [dead]
+  player  : —
+
+■ kkb1.py  [⚫ 死透]
+  站點: https://kkb1.sixniceezsx.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 27
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ kanjuAI.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ✅ 列表 40
+  detail  : ✅ 西雅图斗争
+  player  : ❌ url 是假連結： [dead]
+
+■ lav.py  [🟡 待確認]
+  站點: http://sir_new.tiansexyl.tv
+  load    : ✅
+  init    : ✅
+  home    : ❌ RuntimeError: fetch failed: URLError: <urlopen error [Errno 11001] getaddrinfo failed> [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ lav_2.py  [🟡 待確認]
+  站點: http://sir_new.tiansexyl.tv
+  load    : ✅
+  init    : ✅
+  home    : ❌ RuntimeError: fetch failed: URLError: <urlopen error [Errno 11001] getaddrinfo failed> [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ lav_3.py  [🟡 待確認]
+  站點: http://sir_new.tiansexyl.tv
+  load    : ✅
+  init    : ✅
+  home    : ❌ RuntimeError: fetch failed: URLError: <urlopen error [Errno 11001] getaddrinfo failed> [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ Libvio.py  [⚫ 死透]
+  站點: https://www.libvio.run
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 18
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Libvio_2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ lives.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ✅ 列表 120
+  detail  : ✅ 招主持！全麦美女可撩
+  player  : ❌ url 是假連結：['流畅', 'http://al.flv.huya.com/huyalive/999999600834796-600834796-2580565799118831616-1201793048-10057-A-0-11791411349.flv?wsSecret=8f743dc95891044a3c48faacada03ef2&wsTime=6ac836f1&fm=RFdxOEJjSjNoNkRKdDZUWV8kMF8kMV8kMl8kMw%3D%3D&ctype=tars_mp&fs=bgct&t=102', '超清', 'http://al.flv.huya.com/huyalive/999999600834796-600834796-2580565799118831616-1201793048-10057-A-0-11791411349.flv?wsSecret=8f743dc95891044a3c48faacada03ef2&wsTime=6ac836f1&fm=RFdxOEJjSjNoNkRKdDZUWV8kMF8kMV8kMl8kMw%3D%3D&ctype=tars_mp&fs=bgct&t=102'] [dead]
+
+■ lsp传媒（优）.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ fengyeyingyuan.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ Lvmao影院.py  [🔴 結構壞]
+  站點: https://www.baptbo.vip
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ AttributeError: 'Spider' object has no attribute 'log' [structural]
+  detail  : —
+  player  : —
+
+■ lust12.py  [⚫ 死透]
+  站點: https://www.lust12.cc, https://lust12.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Mang.py  [🔴 結構壞]
+  站點: https://pianku.api.mgtv.com
+  load    : ✅
+  init    : ✅
+  home    : ❌ TypeError: 'NoneType' object is not subscriptable [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ mangguoTV.py  [🔴 結構壞]
+  站點: https://pianku.api.mgtv.com
+  load    : ✅
+  init    : ✅
+  home    : ❌ TypeError: 'NoneType' object is not subscriptable [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ minba.py  [⚫ 死透]
+  站點: https://1h5ceqq1h0.minba-abus.buzz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 20
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ minijj.py  [⚫ 死透]
+  站點: https://www.minijj.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ MIss.py  [⚫ 死透]
+  站點: https://missav.ws, https://missav.ws
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ masex.py  [⚫ 死透]
+  站點: https://masex.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Moovie影牛.py  [⚫ 死透]
+  站點: https://moovie.c2v2.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ✅ 列表 50
+  detail  : ❌ vod_play_url 為空 [dead]
+  player  : —
+
+■ mp.py  [🟡 待確認]
+  站點: https://g.c494.com
+  load    : ✅
+  init    : ✅
+  home    : ❌ RuntimeError: fetch failed: URLError: <urlopen error [Errno 11001] getaddrinfo failed> [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ MOTV.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ hqg.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ muyexxx.py  [🔴 結構壞]
+  站點: https://opgyxc1szs.muyexxxche.buzz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ n004.py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ❌ JSONDecodeError: Expecting value: line 1 column 1 (char 0) [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ n006.py  [🟢 合格]
+  站點: https://xsz-shared-proxy.97471201.workers.dev
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ✅ 列表 12
+  detail  : ✅ OKK-092 瑪麗亞·希加，濕漉漉、閃閃發光，身著一件完美泳裝，緊貼著她曼妙的身姿。盡情欣賞這位可愛女孩的泳裝風采吧！這部AV以她換衣服的秘密拍攝片段開始，展現了各種私密部位的特寫鏡頭，例如從小胸到大胸、剃過的陰毛、露出的陰毛、腋毛等等，以及她穿著泳衣塗抹潤膚露和肥皂的畫面。
+  player  : ✅ parse=0
+
+■ MyAv.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 55
+  category: ✅ 列表 24
+  detail  : ✅ EBWH-258奇迹般的J罩杯OL被比男友更爽的对象，竟然是中年恶心上E-BODY赤井彗星小椋ひかり
+  player  : ❌ play_url 的 id 為空 [dead]
+
+■ n010.py  [⚫ 死透]
+  站點: https://mjv015.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 15
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ koubaodaquanAV.py  [⚫ 死透]
+  站點: https://knm111.top
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 24
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ n009.py  [⚫ 死透]
+  站點: https://kie.gdd4.pics
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ n022.py  [⚫ 死透]
+  站點: https://yri.lytt6.motorcycles
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ n029.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ✅ 列表 20
+  detail  : ✅ 全家问斩我爹狂爆家丑卡BUG，皇帝听懵了
+  player  : ❌ url 是假連結： [dead]
+
+■ n031.py  [⚫ 死透]
+  站點: https://kux.yyll3.yachts
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ naifeigongchang.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ✅ 列表 40
+  detail  : ✅ 特工狂花
+  player  : ❌ url 是假連結： [dead]
+
+■ OK传媒_修正终极版.py  [🔴 結構壞]
+  站點: https://s_ae_ep_k.cha18c8.top
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ p384.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 18
+  category: ✅ 列表 20
+  detail  : ✅ 白虎喵-中秋写真记可爱喵喵色诱摄影师滴蜡调教
+  player  : ❌ url 是假連結：http://127.0.0.1:61679/hls?u=aHR0cHM6Ly9zampkYTMub29hdDg4LmN [dead]
+
+■ p424.py  [⚫ 死透]
+  站點: https://avple.tv, https://www.avple.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 34
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ p427.py  [⚫ 死透]
+  站點: https://dzf.lcfd3.lat
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ MTYX影视.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ p432.py  [⚫ 死透]
+  站點: https://dyz.shtsp3.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ p433.py  [⚫ 死透]
+  站點: https://bnz.sjk6.beauty
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ n016.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ p435.py  [⚫ 死透]
+  站點: https://nzgyz-58190-thndpm.miyoooooo666oom72.top/yoooooo
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ n019.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ p445.py  [🟢 合格]
+  站點: https://xsz-shared-proxy.97471201.workers.dev
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ✅ 列表 12
+  detail  : ✅ OKK-092 瑪麗亞·希加，濕漉漉、閃閃發光，身著一件完美泳裝，緊貼著她曼妙的身姿。盡情欣賞這位可愛女孩的泳裝風采吧！這部AV以她換衣服的秘密拍攝片段開始，展現了各種私密部位的特寫鏡頭，例如從小胸到大胸、剃過的陰毛、露出的陰毛、腋毛等等，以及她穿著泳衣塗抹潤膚露和肥皂的畫面。
+  player  : ✅ parse=0
+
+■ PaPa视频.py  [🔴 結構壞]
+  站點: http://202601.duduo.vip
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ AttributeError: 'Spider' object has no attribute 'html' [structural]
+  detail  : —
+  player  : —
+
+■ pipixia.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ p440.py  [⚫ 死透]
+  站點: https://8.seniu1086.cc:8888, https://8.seniu1085.cc:8888
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ ppx.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ ppx1.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ ppx_4.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ py_lreeok.py  [🟡 待確認]
+  站點: https://www.lreeok.vip
+  load    : ✅
+  init    : ✅
+  home    : ❌ RuntimeError: fetch failed: URLError: <urlopen error [Errno 11001] getaddrinfo failed> [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ POMO4K.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ✅ 列表 19
+  detail  : ❌ vod_play_url 為空 [dead]
+  player  : —
+
+■ py_mrav.py  [🔴 結構壞]
+  站點: https://stgay.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ 分類沒有 type_id [structural]
+  detail  : —
+  player  : —
+
+■ py_Phub.py  [🔴 結構壞]
+  站點: https://www.pornhub.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ TypeError: 'NoneType' object is not callable [structural]
+  detail  : —
+  player  : —
+
+■ py_phu.py  [🔴 結構壞]
+  站點: https://www.pornhub.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ AttributeError: 'Spider' object has no attribute 'cleanText' [structural]
+  detail  : —
+  player  : —
+
+■ py_stripchat.py  [🟡 待確認]
+  站點: https://zh.stripchat.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ✅ 列表 60
+  detail  : ❌ JSONDecodeError: Expecting value: line 1 column 1 (char 0) [pending]
+  player  : —
+
+■ qingfupo.py  [⚫ 死透]
+  站點: https://xn--6-tf2b.qingfupo02.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 15
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ p428.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ qipaoshipin.py  [⚫ 死透]
+  站點: https://www.qpsp.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 11
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ p434.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ qingwa_2.py  [⚫ 死透]
+  站點: https://www.tev969.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ QS五月天.py  [⚫ 死透]
+  站點: https://qswyt4444.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ R3E2O_2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 27
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ reboAPP.py  [🟡 待確認]
+  站點: http://v.rbotv.cn
+  load    : ✅
+  init    : ✅
+  home    : ❌ ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')) [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ rolizxwnoble.py  [🔴 結構壞]
+  站點: https://pnd27y1jh1.rolizxwnoble.buzz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ Rou.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ qisegu.py  [⚫ 死透]
+  站點: https://u3v4w5x6.qisegu52.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ SCD短剧.py  [🟢 合格]
+  站點: https://scd.686235.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ✅ 列表 16
+  detail  : ✅ MKY-SV-002表姐的消署秘技-梁芸菲
+  player  : ✅ parse=0
+
+■ sexav_spider.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ skapp.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ 回傳 NoneType [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ shuabutingduanju.py  [⚫ 死透]
+  站點: https://duan.brloop.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ qisegu_2.py  [⚫ 死透]
+  站點: https://u3v4w5x6.qisegu52.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ taiav.py  [🔴 結構壞]
+  站點: https://taiav.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ ThePorn.py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ RuntimeError: fetch failed: URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1018)> [pending]
+  detail  : —
+  player  : —
+
+■ ToV5.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ tube8.py  [⚫ 死透]
+  站點: https://www.tube8.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ qingwa.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ TvSmt.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ UAA[听].py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ RuntimeError: fetch failed: UnicodeEncodeError: 'ascii' codec can't encode characters in position 41-44: ordinal not in range(128) [pending]
+  detail  : —
+  player  : —
+
+■ stripchat直播1.py  [🟡 待確認]
+  站點: https://zh.stripol.com/
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ✅ 列表 60
+  detail  : ❌ JSONDecodeError: Expecting value: line 1 column 1 (char 0) [pending]
+  player  : —
+
+■ unnamed.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ unnamed_3.py  [⚫ 死透]
+  站點: http://xn--pg3-chimei100-com-7483af92d.chimei69.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ V-HUB.py  [⚫ 死透]
+  站點: https://newxvideos.pages.dev
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 38
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ V-HUB[成人].py  [⚫ 死透]
+  站點: https://newxvideos.pages.dev
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 38
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ uu_wang_pu_men.py  [⚫ 死透]
+  站點: https://g--othiesh.wangpumen-9eee999.click
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 47
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ wangfeimaoyingshi_guanti.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ webstar.py  [⚫ 死透]
+  站點: https://www.webstar.cn
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ weimeijingpin.py  [⚫ 死透]
+  站點: https://shiresm.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ✅ 列表 12
+  detail  : ✅ 锤子探花外围美巨乳明星脸妹子爆射巨乳
+  player  : ❌ url 是假連結：http://127.0.0.1:9978/proxy?do=py&url=https%3A%2F%2Fkjbwhcna [dead]
+
+■ VidHub影视.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ smys.py  [⚫ 死透]
+  站點: https://www.china-eae.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ Twojav.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ WhosTV.py  [🔴 結構壞]
+  站點: https://whos.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ wukong.py  [⚫ 死透]
+  站點: https://a4j665s.bingyu4.sbs
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 20
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ XChina套图修复版.py  [⚫ 死透]
+  站點: https://8se.me
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ WhosTV_2.py  [🔴 結構壞]
+  站點: https://whos.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 2
+  category: ❌ AttributeError: 'Spider' object has no attribute 'regStr' [structural]
+  detail  : —
+  player  : —
+
+■ xinjie.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ 回傳 NoneType [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ xiaobaobei.py  [⚫ 死透]
+  站點: https://lay-aim-mix.mixbbaotutum1.top
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ xbeg.py  [⚫ 死透]
+  站點: https://v.qq.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 1
+  category: ✅ 列表 30
+  detail  : ✅ 首播·熊出没之神奇宝物2
+  player  : ❌ url 是假連結： [dead]
+
+■ xszav.py  [🟢 合格]
+  站點: https://xsz-shared-proxy.97471201.workers.dev
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ✅ 列表 12
+  detail  : ✅ OKK-092 瑪麗亞·希加，濕漉漉、閃閃發光，身著一件完美泳裝，緊貼著她曼妙的身姿。盡情欣賞這位可愛女孩的泳裝風采吧！這部AV以她換衣服的秘密拍攝片段開始，展現了各種私密部位的特寫鏡頭，例如從小胸到大胸、剃過的陰毛、露出的陰毛、腋毛等等，以及她穿著泳衣塗抹潤膚露和肥皂的畫面。
+  player  : ✅ parse=0
+
+■ XNXX.py  [🟢 合格]
+  站點: https://xnxx.health
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ✅ 列表 36
+  detail  : ✅ Tight Teen Gets The Heavy On Hotties Treatment
+... Tight Teen Gets The Heavy On Hotties Treatment
+  player  : ✅ parse=0
+
+■ xszavxf.py  [🟢 合格]
+  站點: https://xsz-shared-proxy.97471201.workers.dev
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ✅ 列表 12
+  detail  : ✅ OKK-092 瑪麗亞·希加，濕漉漉、閃閃發光，身著一件完美泳裝，緊貼著她曼妙的身姿。盡情欣賞這位可愛女孩的泳裝風采吧！這部AV以她換衣服的秘密拍攝片段開始，展現了各種私密部位的特寫鏡頭，例如從小胸到大胸、剃過的陰毛、露出的陰毛、腋毛等等，以及她穿著泳衣塗抹潤膚露和肥皂的畫面。
+  player  : ✅ parse=0
+
+■ XSZAV2.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ TypeError: Spider.homeContent() takes 1 positional argument but 2 were given [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ wujidianyingwang_guanti.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 41
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ YHDM.py  [🟡 待確認]
+  站點: https://www.857fans.com
+  load    : ✅
+  init    : ✅
+  home    : ❌ RuntimeError: fetch failed: URLError: <urlopen error [Errno 11001] getaddrinfo failed> [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ yemahl.py  [⚫ 死透]
+  站點: https://www.yemahl.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 21
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ yingshidaquan.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ zgtv.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ ZheTian_qingwife_wp.py  [⚫ 死透]
+  站點: https://wtwgi.qingwife01.club
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 24
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ ZheTian_qingwife_wp_2.py  [⚫ 死透]
+  站點: https://wtwgi.qingwife01.club
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 24
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ zhainanyingshi.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 一起草.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ ybhz51.py  [⚫ 死透]
+  站點: https://g3h4i5j6.ybhz51.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 丢丢喵.py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 30
+  category: ❌ ConnectionError: HTTPSConnectionPool(host='wanwuu.comnone', port=443): Max retries exceeded with url: /page/1/ (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x0000016460688A50>: Failed to resolve 'wanwuu.comnone' ([Errno 11001] getaddrinfo failed)")) [pending]
+  detail  : —
+  player  : —
+
+■ 丢丢喵_3.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ AttributeError: 'NoneType' object has no attribute 'split' [structural]
+  detail  : —
+  player  : —
+
+■ 中文X直播.py  [🟡 待確認]
+  站點: https://zh.stripchat.com/
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ✅ 列表 60
+  detail  : ❌ JSONDecodeError: Expecting value: line 1 column 1 (char 0) [pending]
+  player  : —
+
+■ xiongdiyingshi.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 久夜AV.py  [⚫ 死透]
+  站點: https://91av.club
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 三年高考五年模拟.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 52
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 九龙趣看.py  [🟡 待確認]
+  站點: http://110.42.49.188:9902
+  load    : ✅
+  init    : ✅
+  home    : ❌ RuntimeError: fetch failed: ConnectionResetError: [WinError 10054] 遠端主機已強制關閉一個現存的連線。 [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ 云朵影视.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ✅ 列表 85
+  detail  : ✅ 八仙！
+  player  : ❌ url 是假連結： [dead]
+
+■ 仙缘秘录阁.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ AttributeError: 'str' object has no attribute 'get' [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ 企鹅体育.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ❌ 分類沒有 type_id [structural]
+  detail  : —
+  player  : —
+
+■ 万物复苏.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 中神通.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 你的秘书_2.py  [⚫ 死透]
+  站點: https://msa.91tk.lat
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ✅ 列表 29
+  detail  : ✅ 绿奴3P泄密杭州大奶良家少妇
+  player  : ❌ url 是假連結：http://127.0.0.1:9978/proxy?do=py&url=https%3A%2F%2Fsryndbsf [dead]
+
+■ 偷乐短剧.py  [⚫ 死透]
+  站點: https://www.toule.top
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 15
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 九亿少女.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 光鸭社区.py  [⚫ 死透]
+  站點: https://gy.lubao2.de5.net
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 免费影院(.py  [⚫ 死透]
+  站點: https://www.926dy.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 共青春影院.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 优质粉嫩鲍.py  [⚫ 死透]
+  站點: https://fcy.yzfnb8.lat/cn/home/web/
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 11
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 千千影视.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ✅ 列表 40
+  detail  : ✅ 超级少女
+  player  : ❌ url 是假連結： [dead]
+
+■ 厂长影视.py  [⚫ 死透]
+  站點: https://www.hebeigoogle.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 伊人奶超大.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 可乐影院.py  [⚫ 死透]
+  站點: https://cil.klyy3.wiki
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 吞精兽.py  [🔴 結構壞]
+  站點: https://pde.tjs4.beer
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ AttributeError: 'Spider' object has no attribute 'log' [structural]
+  detail  : —
+  player  : —
+
+■ 可可.py  [🟡 待確認]
+  站點: https://vlogic.mfxdf.cn
+  load    : ✅
+  init    : ✅
+  home    : ❌ RuntimeError: fetch failed: URLError: <urlopen error [WinError 10061] 無法連線，因為目標電腦拒絕連線。> [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ 兄弟影视.py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ ConnectTimeout: HTTPSConnectionPool(host='www.brovods.top', port=443): Max retries exceeded with url: /show/None--------1---/ (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x000001F95A0BA120>, 'Connection to www.brovods.top timed out. (connect timeout=None)')) [pending]
+  detail  : —
+  player  : —
+
+■ 啊哈DJ网.py  [⚫ 死透]
+  站點: https://www.ahadj.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 11
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 唯美精品.py  [⚫ 死透]
+  站點: https://shiresm.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ✅ 列表 12
+  detail  : ✅ 锤子探花外围美巨乳明星脸妹子爆射巨乳
+  player  : ❌ url 是假連結：http://127.0.0.1:9978/proxy?do=py&url=https%3A%2F%2Fkjbwhcna [dead]
+
+■ 嗷呜大屌_腾.py  [🟡 待確認]
+  站點: https://v.qq.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ KeyError: 'data' [pending]
+  detail  : —
+  player  : —
+
+■ 四虎视频.py  [🟡 待確認]
+  站點: https://www.sihuhu.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 54
+  category: ❌ RuntimeError: fetch failed: URLError: <urlopen error [Errno 11001] getaddrinfo failed> [pending]
+  detail  : —
+  player  : —
+
+■ 土豆视频.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 22
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 在线涩库.py  [🔴 結構壞]
+  站點: https://dottaia.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 多瑙影院.py  [⚫ 死透]
+  站點: https://dnvod.org
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ✅ 列表 54
+  detail  : ✅ 生日快乐
+  player  : ❌ url 是假連結： [dead]
+
+■ 夜社短剧.py  [⚫ 死透]
+  站點: https://yeshe.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 25
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 天天动漫.py  [⚫ 死透]
+  站點: https://www.ttdm4.me
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 天天影视.py  [⚫ 死透]
+  站點: https://www.baixiaotangtop.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 大象影视.py  [🟡 待確認]
+  站點: https://jj88mm.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 24
+  category: ✅ 列表 20
+  detail  : ✅ 服务好上司是秘书的本职工作-薇薇-巨乳后入剧情
+  player  : ❌ ValueError: invalid literal for int() with base 10: '52005$$$播放$52005$$$播放$52005' [pending]
+
+■ 太二追剧.py  [⚫ 死透]
+  站點: https://v.tai2.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 奇优影院.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 奇优影院_2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 奶糖视频.py  [⚫ 死透]
+  站點: https://ewrzka4.naitang8.top
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 奇点影视.py  [⚫ 死透]
+  站點: https://www.qdys2.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 唐人街影院.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 好色TV（优）.py  [⚫ 死透]
+  站點: https://hsex.tv/
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 妈妈自拍全集.py  [⚫ 死透]
+  站點: https://mmzp18.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 妈妈自拍全集_2.py  [⚫ 死透]
+  站點: https://mmzp18.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 好剧影视.py  [⚫ 死透]
+  站點: https://www.haojuwu.cc/
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 寂寞阿姨_www123_lol.py  [⚫ 死透]
+  站點: https://www123.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 24
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 好剧影视_2.py  [⚫ 死透]
+  站點: https://www.haojuwu.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 小涩界.py  [⚫ 死透]
+  站點: https://se.xiaosejie73.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 25
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 小学妹.py  [⚫ 死透]
+  站點: https://91.xiaoxuemei91912.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 小苹果影视_去及時雨.py  [⚫ 死透]
+  站點: http://item.xpgcom.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 小黄书.py  [⚫ 死透]
+  站點: https://xchina001.site
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 19
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 山水影院.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 勃士.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 宝园影视.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 快猫社区.py  [⚫ 死透]
+  站點: https://www.kma85.cc:8888
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 11
+  category: ✅ 列表 1
+  detail  : ❌ vod_play_url 為空 [dead]
+  player  : —
+
+■ 怡红院.py  [⚫ 死透]
+  站點: https://uxzl.1hong.buzz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 26
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 性爱大师.py  [⚫ 死透]
+  站點: https://2dt0.xxaaddss.top/
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 11
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 悠悠乐园.py  [⚫ 死透]
+  站點: https://nzgyz-58190-thndpm.miyoooooo666oom72.top/yoooooo
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 屌丝天下.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 抖音直播.py  [⚫ 死透]
+  站點: https://live.douyin.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 抠爆B处.py  [⚫ 死透]
+  站點: https://t3g15u7s.kbbshape.buzz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ✅ 列表 20
+  detail  : ✅ 房东的阴谋 “提灯定损”强迫女租客肉偿 性感奶兔沦为淫欲房东性奴 奶兔
+  player  : ❌ url 是假連結：http://127.0.0.1:9978/proxy?do=py&url=https%3A%2F%2Fbf3.qrtu [dead]
+
+■ 搜剧AI.py  [⚫ 死透]
+  站點: https://ai.baipiaozhe.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ✅ 列表 20
+  detail  : ❌ list 為空 [dead]
+  player  : —
+
+■ 床前侍卫.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 弟大勿勃.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 星河影视.py  [⚫ 死透]
+  站點: https://xhkan.top
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 星空五月天.py  [⚫ 死透]
+  站點: https://d8v8rjm9.bbmm277.sbs
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 40
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 映像星球.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 智者玩水.py  [⚫ 死透]
+  站點: https://www.zhizhewanshui.shop
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 房中秘术_MacCMS_v8.py  [⚫ 死透]
+  站點: https://fzms12.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 星影4K.py  [⚫ 死透]
+  站點: http://43.248.128.122:8080
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 1
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 权色视频.py  [⚫ 死透]
+  站點: https://www.xiaoqiche.shop
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 15
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 月之祠.py  [⚫ 死透]
+  站點: https://www.moonci.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 杏色影视.py  [⚫ 死透]
+  站點: https://www.xsys5.makeup
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 11
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 枝枝影视.py  [⚫ 死透]
+  站點: https://zzoc.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 权色视频_2.py  [⚫ 死透]
+  站點: https://www.xiaoqiche.shop
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 15
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 枫叶4K备用.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 枫叶影院.py  [⚫ 死透]
+  站點: https://www.cd-zj.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 柯南影视.py  [⚫ 死透]
+  站點: https://www.knvod.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 梅花阁.py  [⚫ 死透]
+  站點: https://kli.mhg9.top, https://kli.mhg9.top
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ✅ 列表 71
+  detail  : ✅ 无码 亲姐妹双飞粉嫩酮体 妹妹骚穴自慰狂喷
+  player  : ❌ play_url 格式怪：https://2609.lbsl2026.com/20261006/c6FOi [dead]
+
+■ 樱花动漫.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 歪比巴卜.py  [⚫ 死透]
+  站點: https://wbbb1.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ✅ 列表 74
+  detail  : ❌ list 為空 [dead]
+  player  : —
+
+■ 歪比巴卜_2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ✅ 列表 96
+  detail  : ✅ 115400
+  player  : ❌ url 是假連結： [dead]
+
+■ 歪比影视.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 樱花传媒.py  [⚫ 死透]
+  站點: https://x3av.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 毒舌影视.py  [🟡 待確認]
+  站點: https://www.xnhrsb.com/
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ✅ 列表 45
+  detail  : ✅ 谁是马丁·马尔？
+  player  : ❌ RuntimeError: fetch failed: UnicodeEncodeError: 'ascii' codec can't encode characters in position 33-34: ordinal not in range(128) [pending]
+
+■ 毒舌影视_2.py  [🟡 待確認]
+  站點: https://www.xnhrsb.com/
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ✅ 列表 45
+  detail  : ✅ 谁是马丁·马尔？
+  player  : ❌ RuntimeError: fetch failed: UnicodeEncodeError: 'ascii' codec can't encode characters in position 33-34: ordinal not in range(128) [pending]
+
+■ 河马影视.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 153
+  category: ✅ 列表 12
+  detail  : ✅ 河马影视
+  player  : ❌ url 是假連結： [dead]
+
+■ 河马短剧_3.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 水兰亭.py  [⚫ 死透]
+  站點: https://eij.slt8.boats/
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 时空尤物.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 泥視頻.CC_2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ✅ 列表 48
+  detail  : ✅ 情圣2
+  player  : ❌ url 是假連結： [dead]
+
+■ 泥視頻.CC.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ✅ 列表 48
+  detail  : ✅ 情圣2
+  player  : ❌ url 是假連結： [dead]
+
+■ 浪巢福地.py  [⚫ 死透]
+  站點: https://ayw.lcfd3.lat
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 浪巢福地_2.py  [⚫ 死透]
+  站點: https://dzf.lcfd3.lat
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 海角社区_2.py  [⚫ 死透]
+  站點: https://haijiao.com, https://haijiao.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 91
+  category: ✅ 列表 19
+  detail  : ✅ 3名央视记者燕郊直播遭阻挠！10余人将其强制架走，现场画面曝光
+  player  : ❌ url 是假連結： [dead]
+
+■ 海角社区_3.py  [⚫ 死透]
+  站點: https://haijiao.com, https://haijiao.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 91
+  category: ✅ 列表 4
+  detail  : ✅ 台湾饶舌歌手『ØZI 陈奕凡』48 秒性爱影片全网疯传！
+  player  : ❌ url 是假連結： [dead]
+
+■ 海豚研究院专用.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 清新萝莉.py  [⚫ 死透]
+  站點: https://dcw.qxll8.boats
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ✅ 列表 48
+  detail  : ✅ SSNI754 【中文】交换体液浓密性交无剪辑版最纯粹的做爱儿玉玲奈
+  player  : ❌ url 是假連結：http://127.0.0.1:9978/proxy?do=py&url=https%3A%2F%2Fhsm3.hwz [dead]
+
+■ 溏心次元.py  [⚫ 死透]
+  站點: https://lhej.txcy-emo.buzz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 93
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 有料.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 漫剧短剧.py  [⚫ 死透]
+  站點: https://hg.115567.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 泥视频.py  [⚫ 死透]
+  站點: https://www.nivod.vip
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 漫闪.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 潘金连 (3).py  [⚫ 死透]
+  站點: https://www.pjl7.best
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 漫.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 23
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 爱壹帆.py  [⚫ 死透]
+  站點: https://www.iyf.lv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 爱壹帆_2.py  [⚫ 死透]
+  站點: https://www.iyf.lv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 狼友天堂.py  [⚫ 死透]
+  站點: https://yri.lytt6.motorcycles
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 狼友天堂_2.py  [⚫ 死透]
+  站點: https://yri.lytt6.motorcycles
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 猎奇福利.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 玩蛋吧.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ✅ 列表 20
+  detail  : ✅ 极品流出爆乳美腿女神麻酥酥最新黑丝旗袍福利
+  player  : ❌ url 是假連結： [dead]
+
+■ 爱壹帆_3.py  [⚫ 死透]
+  站點: https://www.iyf.lv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 电影侠.py  [⚫ 死透]
+  站點: https://www.dyx00.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ✅ 列表 24
+  detail  : ✅ 侦探已死第二季
+  player  : ❌ url 是假連結： [dead]
+
+■ 泡泡屋_2.py  [⚫ 死透]
+  站點: https://tlobcnv.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 看戏影视.py  [⚫ 死透]
+  站點: https://www.kanxiya.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 直播.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ✅ 列表 120
+  detail  : ✅ 蓝莓哥up
+  player  : ❌ url 是假連結：['蓝光4M', 'http://hs.flv.huya.com/huyalive/1199658761581-1199658761581-5853550785291354112-2399317646618-10057-A-0-1.flv?ratio=4000&wsSecret=0367adb3c2465753a1a4094e973258b8&wsTime=6ac73bc0&ctype=huya_adr&seqid=11996587615811791420256&uid=1199658761581&fs=bgct&ver=1&t=102', '蓝光', 'http://hs.flv.huya.com/huyalive/1199658761581-1199658761581-5853550785291354112-2399317646618-10057-A-0-1.flv?ratio=3000&wsSecret=0367adb3c2465753a1a4094e973258b8&wsTime=6ac73bc0&ctype=huya_adr&seqid=11996587615811791420256&uid=1199658761581&fs=bgct&ver=1&t=102', '超清', 'http://hs.flv.huya.com/huyalive/1199658761581-1199658761581-5853550785291354112-2399317646618-10057-A-0-1.flv?ratio=2000&wsSecret=0367adb3c2465753a1a4094e973258b8&wsTime=6ac73bc0&ctype=huya_adr&seqid=11996587615811791420256&uid=1199658761581&fs=bgct&ver=1&t=102', '高清', 'http://hs.flv.huya.com/huyalive/1199658761581-1199658761581-5853550785291354112-2399317646618-10057-A-0-1.flv?ratio=1200&wsSecret=0367adb3c2465753a1a4094e973258b8&wsTime=6ac73bc0&ctype=huya_adr&seqid=11996587615811791420256&uid=1199658761581&fs=bgct&ver=1&t=102', '流畅', 'http://hs.flv.huya.com/huyalive/1199658761581-1199658761581-5853550785291354112-2399317646618-10057-A-0-1.flv?ratio=500&wsSecret=0367adb3c2465753a1a4094e973258b8&wsTime=6ac73bc0&ctype=huya_adr&seqid=11996587615811791420256&uid=1199658761581&fs=bgct&ver=1&t=102'] [dead]
+
+■ 直播_2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ✅ 列表 120
+  detail  : ✅ 蓝莓哥up
+  player  : ❌ url 是假連結：['蓝光4M', 'http://hs.flv.huya.com/huyalive/1199658761581-1199658761581-5853550785291354112-2399317646618-10057-A-0-1.flv?ratio=4000&wsSecret=c13aa0f5381ca72ec8df39511baa5b1b&wsTime=6ac73bc1&ctype=huya_adr&seqid=11996587615811791420257&uid=1199658761581&fs=bgct&ver=1&t=102', '蓝光', 'http://hs.flv.huya.com/huyalive/1199658761581-1199658761581-5853550785291354112-2399317646618-10057-A-0-1.flv?ratio=3000&wsSecret=c13aa0f5381ca72ec8df39511baa5b1b&wsTime=6ac73bc1&ctype=huya_adr&seqid=11996587615811791420257&uid=1199658761581&fs=bgct&ver=1&t=102', '超清', 'http://hs.flv.huya.com/huyalive/1199658761581-1199658761581-5853550785291354112-2399317646618-10057-A-0-1.flv?ratio=2000&wsSecret=c13aa0f5381ca72ec8df39511baa5b1b&wsTime=6ac73bc1&ctype=huya_adr&seqid=11996587615811791420257&uid=1199658761581&fs=bgct&ver=1&t=102', '高清', 'http://hs.flv.huya.com/huyalive/1199658761581-1199658761581-5853550785291354112-2399317646618-10057-A-0-1.flv?ratio=1200&wsSecret=c13aa0f5381ca72ec8df39511baa5b1b&wsTime=6ac73bc1&ctype=huya_adr&seqid=11996587615811791420257&uid=1199658761581&fs=bgct&ver=1&t=102', '流畅', 'http://hs.flv.huya.com/huyalive/1199658761581-1199658761581-5853550785291354112-2399317646618-10057-A-0-1.flv?ratio=500&wsSecret=c13aa0f5381ca72ec8df39511baa5b1b&wsTime=6ac73bc1&ctype=huya_adr&seqid=11996587615811791420257&uid=1199658761581&fs=bgct&ver=1&t=102'] [dead]
+
+■ 禁片天堂.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 59
+  category: ✅ 列表 28
+  detail  : ✅ SSIS-816 超級明星女優大亂交 激烈稀有共演 S1粉絲感謝祭
+  player  : ❌ url 是假連結： [dead]
+
+■ 禁片天堂_2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 59
+  category: ✅ 列表 28
+  detail  : ✅ SSIS-816 超級明星女優大亂交 激烈稀有共演 S1粉絲感謝祭
+  player  : ❌ url 是假連結： [dead]
+
+■ 第九短剧网.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 私房研究所.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 糯米短剧.py  [🔴 結構壞]
+  站點: https://8728.mrsvj.com
+  load    : ✅
+  init    : ✅
+  home    : ❌ AttributeError: 'str' object has no attribute 'get' [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ 红果.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 红果短剧_2.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 红果短剧漫剧.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 2
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 网飞TV.py  [⚫ 死透]
+  站點: https://www.wangfei.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 聚合影视.py  [🔴 結構壞]
+  站點: https://av.cuct.ccwu.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 美人吹箫.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 腾讯视频.py  [🟡 待確認]
+  站點: https://v.qq.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ KeyError: 'data' [pending]
+  detail  : —
+  player  : —
+
+■ 色即空.py  [⚫ 死透]
+  站點: https://bnz.sjk6.beauty
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 肉視頻.py  [⚫ 死透]
+  站點: https://rou.video
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 色吧资源.py  [⚫ 死透]
+  站點: https://www.shangbanke.shop
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 色情雲.py  [⚫ 死透]
+  站點: https://porncloud.tv
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 11
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 炮兵网.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 精彩.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 色播聚合.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 色播聚合_2.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 色花堂视频.py  [⚫ 死透]
+  站點: https://dyz.shtsp3.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 色花堂视频_2.py  [⚫ 死透]
+  站點: https://dyz.shtsp3.lol
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 苹果视频_4.py  [⚫ 死透]
+  站點: https://618636.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ✅ 列表 16
+  detail  : ❌ list 為空 [dead]
+  player  : —
+
+■ 色牛秒播.py  [⚫ 死透]
+  站點: https://8.seniu1086.cc:8888, https://8.seniu1085.cc:8888
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 14
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 苹果视频_5.py  [⚫ 死透]
+  站點: https://618413.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ✅ 列表 16
+  detail  : ❌ list 為空 [dead]
+  player  : —
+
+■ 茶杯狐-TJTCDL.py  [🟡 待確認]
+  站點: https://www.tjtcdl.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ ConnectionError: HTTPSConnectionPool(host='www.tjtcdl.com', port=443): Max retries exceeded with url: /cupfox-list/None--------1---.html (Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object at 0x00000231BF6B3380>: Failed to establish a new connection: [WinError 10061] 無法連線，因為目標電腦拒絕連線。')) [pending]
+  detail  : —
+  player  : —
+
+■ 萝莉AV.py  [⚫ 死透]
+  站點: https://212602.luoliav.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 萝莉AV_2.py  [⚫ 死透]
+  站點: https://212602.luoliav.cc
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 萝莉岛_2.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 萝莉聚合AV.py  [⚫ 死透]
+  站點: https://www.luojubj.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 草艹草.py  [⚫ 死透]
+  站點: https://mqxppthlr.ccctv01.top
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 20
+  category: ✅ 列表 8
+  detail  : ✅ SAVR-217 【VR】私ね…あなたの喘ぎ声に興奮しちゃうの。僕等が通ういつもの校内、自らの性癖のため-cd1
+  player  : ❌ url 是假連結：http://127.0.0.1:9978/proxy?do=py&url=https%3A%2F%2Fiuewgnbv [dead]
+
+■ 西瓜.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 52
+  category: ✅ 列表 18
+  detail  : ✅ ﻿劲爆完美身材顶级精盆女神 美乳丰臀极品反差视觉盛宴 饥渴的大胸少女让我在射了两次
+  player  : ❌ url 是假連結：http://127.0.0.1:9978/71us?url=https%3A%2F%2Fxgsam.lbjhhnu.c [dead]
+
+■ 酒与花.py  [⚫ 死透]
+  站點: https://caywfd.jyh9.yachts
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ✅ 列表 160
+  detail  : ✅ 探花老王偷拍老油条 骚穴不配合险露馅
+  player  : ❌ url 是假連結：http://127.0.0.1:9978/proxy?do=py&url=https%3A%2F%2F2609.laj [dead]
+
+■ 色播聚合_3.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 鉴黄师_2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 银河视频.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 16
+  category: ✅ 列表 30
+  detail  : ✅ 1187442
+  player  : ❌ url 是假連結： [dead]
+
+■ 集芳阁.py  [⚫ 死透]
+  站點: https://dna.jfg4.quest
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 色播聚合_4.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 韩国BJ.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 1
+  category: ✅ 列表 12
+  detail  : ❌ vod_play_url 為空 [dead]
+  player  : —
+
+■ 韩国色情电影.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ✅ 列表 75
+  detail  : ✅ Invited Woman (2026)
+  player  : ❌ play_url 格式怪：https://koreanporn.stream/Invited%20Woma [dead]
+
+■ 韩国色情电影_2.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ✅ 列表 75
+  detail  : ✅ Invited Woman (2026)
+  player  : ❌ play_url 格式怪：https://koreanporn.stream/Invited%20Woma [dead]
+
+■ 飞鱼.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 7
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 首映网.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 6
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 首页_12.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 24
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 首页_13.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ AttributeError: 'NoneType' object has no attribute 'find_all' [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ 首页_15.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ 回傳 NoneType [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ 首页_16.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 首页_19.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ❌ 回傳 NoneType [structural]
+  category: —
+  detail  : —
+  player  : —
+
+■ 首页_2.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 70
+  category: ❌ TypeError: argument of type 'NoneType' is not iterable [structural]
+  detail  : —
+  player  : —
+
+■ 首页_21.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 67
+  category: ❌ TypeError: can only concatenate str (not "NoneType") to str [structural]
+  detail  : —
+  player  : —
+
+■ 蜜桃源.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 首页_23.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 首页_24.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 63
+  category: ❌ TypeError: argument of type 'NoneType' is not iterable [structural]
+  detail  : —
+  player  : —
+
+■ 首页_25.py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ❌ ConnectionError: HTTPSConnectionPool(host='djw1.com', port=443): Max retries exceeded with url: /all/ (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x000001B36FF41550>: Failed to resolve 'djw1.com' ([Errno 11001] getaddrinfo failed)")) [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ 首页_22.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ✅ 列表 3
+  detail  : ✅ None
+  player  : ❌ play_url 格式怪：https://www.fullhd.xxx/zh// [dead]
+
+■ 首页_26.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 9
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 首页_29.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 首页_28.py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ❌ JSONDecodeError: Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0) [pending]
+  category: —
+  detail  : —
+  player  : —
+
+■ 首页_4.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 24
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 鉴黄师.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 首页_8.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 3
+  category: ✅ 列表 3
+  detail  : ✅ None
+  player  : ❌ play_url 格式怪：https://www.fullhd.xxx/zh// [dead]
+
+■ 魔法盒子.py  [🔴 結構壞]
+  站點: http://movie.l98.cn
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 香蕉视频_2.py  [⚫ 死透]
+  站點: https://h5.xxoo473.org
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 12
+  category: ✅ 列表 16
+  detail  : ✅ 【付费】用女体盛来招待美国客人，然后被两根美国香肠连续中出
+  player  : ❌ url 是假連結： [dead]
+
+■ 麻花影视.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 5
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 麻豆免费在线播放.py  [⚫ 死透]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 8
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 黄果短剧_2.py  [⚫ 死透]
+  站點: https://huangguoai.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 露思AV网.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 黄果短剧_3.py  [⚫ 死透]
+  站點: https://huangguoai.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 10
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 黄豆短剧_6.py  [🔴 結構壞]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 黑料不打烊_2.py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 21
+  category: ❌ RuntimeError: fetch failed: URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1018)> [pending]
+  detail  : —
+  player  : —
+
+■ 黑料不打烊_3.py  [🟡 待確認]
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 19
+  category: ❌ RuntimeError: fetch failed: URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1018)> [pending]
+  detail  : —
+  player  : —
+
+■ 黑料网.py  [⚫ 死透]
+  站點: https://heiliao.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 28
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 🌈 51吸瓜_3.py  [🔴 結構壞]
+  站點: https://artist.vgwtswi.xyz
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 0
+  category: ❌ 沒有分類可用 [structural]
+  detail  : —
+  player  : —
+
+■ 黄色仓库_3.py  [⚫ 死透]
+  站點: https://hsck.la
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 30
+  category: ✅ 列表 40
+  detail  : ✅
+  player  : ❌ play_url 格式怪：https://t0.97img.com/b1000276/a.m3u8 [dead]
+
+■ 🌈 每日大赛_终极完美版.py  [⚫ 死透]
+  站點: https://mrdsa2.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 1
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 🔞┃stgay┃🏳️‍🌈.py  [⚫ 死透]
+  站點: https://25f.jlrlpjbz.com
+  load    : ✅
+  init    : ✅
+  home    : ✅ 分類 4
+  category: ❌ list 為空 [dead]
+  detail  : —
+  player  : —
+
+■ 香女园.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 麦田影院.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —
+
+■ 🌈 51视频_终极完美版.py  [🟡 待確認]
+  load    : —
+  init    : —
+  home    : —
+  category: —
+  detail  : —
+  player  : —

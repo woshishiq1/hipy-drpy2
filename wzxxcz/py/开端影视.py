@@ -1,183 +1,307 @@
 # -*- coding: utf-8 -*-
+"""
+kaiduan.fun CMS 采集 Spider
+
+接口：
+  分类 /user/movie/cms/v1/category?count=20&names={tid}&page={pg}
+  搜索 /user/movie/cms/v1/search?name={key}&page=1&count=10
+  详情 /user/movie/cms/v1/play?id={id}
+
+数据格式：
+  响应头前缀 AkEdSJx，剩余部分 Base64( key(16) + iv(16) + AES_CBC密文 )
+  部分接口返回再套一层 Base64，需要二次解码
+
+详情返回结构：
+  {
+    "code": 1,
+    "data": { ... 视频信息 ... },
+    "datas": [
+      {"id": xxx, "name": "kdjx", "urls": "正片$https://.../redirect/xxx.m3u8"}
+    ]
+  }
+"""
+
+import base64
+import json
+import sys
+import urllib3
+from urllib.parse import urljoin
 
 from Crypto.Cipher import AES
-import sys, json, base64, urllib3
-from base.spider import Spider
-from urllib.parse import urljoin
 from Crypto.Util.Padding import unpad
+
+from base.spider import Spider
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 sys.path.append('..')
 
+
 class Spider(Spider):
-    host, site, path, timeout, targets = '','','', 5, {b'\xb1\xa1\xa6\xe2'.decode('big5'), b'\xc2\xd7\xc0\xed'.decode('gbk'), b'\xba\xd6\xa7Q'.decode('big5'), b"\xff\xfe\x0cT'`".decode('utf-16')}
+
+    host = ''
+    site = ''
+    timeout = 10
+
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2; rv:107) Gecko/20100101 Firefox/98',
+        'User-Agent': (
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2; rv:107) '
+            'Gecko/20100101 Firefox/98'
+        ),
         'Accept-Encoding': 'gzip',
         'referer': '',
-        'Cookie': ''
     }
 
+    DEFAULT_HOST = 'https://api.kaiduan.fun'
+
+    # ---------- 初始化 ----------
     def init(self, extend=''):
         try:
-            if extend:
-                ext = json.loads(extend)
-            else:
-                ext = {'host':'https://api.kaiduan.fun','path':{'search':'/user/movie/cms/v1/search?name={key}&page=1&count=10','detail':'/user/movie/cms/v1/play?id='}}
-            self.host = ext['host'].rstrip('/')
-            self.headers['referer'] =  f'{self.host}/'
-            self.headers['Cookie'] = f'{self.host}/'
-            self.site = ext.get('site')
-            self.path = ext.get('path')
-            timeout = ext.get('timeout')
-            if timeout: self.timeout = timeout
-        except Exception:
-            self.host = ''
+            ext = json.loads(extend) if extend else {}
+            self.host = (ext.get('host') or self.DEFAULT_HOST).rstrip('/')
+            self.headers['referer'] = f'{self.host}/'
 
+            cookie = ext.get('cookie') or ext.get('Cookie')
+            if cookie:
+                self.headers['Cookie'] = cookie
+
+            self.site = ext.get('site')
+            if ext.get('timeout'):
+                self.timeout = ext['timeout']
+        except Exception as e:
+            print(f'[init] {e}', file=sys.stderr)
+            self.host = self.DEFAULT_HOST
+
+    # ---------- 首页 ----------
     def homeContent(self, filter):
-        if not self.host: return None
-        return {'class':[{'type_id':'电影','type_name':'电影'},{'type_id':'连续剧','type_name':'连续剧'},{'type_id':'动漫','type_name':'动漫'},{'type_id':'短剧','type_name':'短剧'},{'type_id':'综艺','type_name':'综艺'},{'type_id':'纪录片','type_name':'纪录片'}]}
+        if not self.host:
+            return None
+        return {
+            'class': [
+                {'type_id': '电影',   'type_name': '电影'},
+                {'type_id': '连续剧', 'type_name': '连续剧'},
+                {'type_id': '动漫',   'type_name': '动漫'},
+                {'type_id': '短剧',   'type_name': '短剧'},
+                {'type_id': '综艺',   'type_name': '综艺'},
+                {'type_id': '纪录片', 'type_name': '纪录片'},
+            ]
+        }
 
     def homeVideoContent(self):
-        return self.categoryContent('电影,连续剧,动漫,短剧,综艺,纪录片',1,False,{})
+        return self.categoryContent('电影', 1, False, {})
 
+    # ---------- 分类 ----------
     def categoryContent(self, tid, pg, filter, extend):
-        if not self.host: return None
-        response = self.fetch(f'{self.host}/user/movie/cms/v1/category?count=20&names={tid}&page={pg}',headers=self.headers, verify=False, timeout=self.timeout).text
-        data = json.loads(self.decrypt(response))['datas']
-        videos = self.arr2vods(data)
-        return {'list': videos}
-
-    def searchContent(self, key, quick, pg='1'):
-        if not self.host or str(pg) != '1': return None
-        if self.site:
-            path = f'/other/module?name={self.site}&params=search|{key}'
-        else:
-            if '{key}' in self.path['search']:
-                path = self.path['search'].replace('{key}',key)
-            else:
-                path = f"{self.path['search']}{key}"
-        if not path.startswith('http'):
-            path = f'{self.host}{path}'
-        response = self.decrypt(self.fetch(path, headers=self.headers, verify=False, timeout=self.timeout).text)
-        response = json.loads(response)
-        if 'datas' in response or 'data' in response:
-            data = response.get('datas',response.get('data'))
-        else:
-            data = response
-        videos = self.arr2vods(data)
-        return {'list': videos, 'page': pg}
-
-    def detailContent(self, ids):
-        if not self.host: return None
-        if str(ids[0]).startswith('http'):
-            path = ids[0]
-        else:
-            if '{key}' in ids[0]:
-                path = self.path['detail'].replace('{key}',ids[0])
-            else:
-                path = f"{self.path['detail']}{ids[0]}"
-            if not path.startswith('http'): path = f'{self.host}{path}'
-        data = self.decrypt(self.fetch(path,headers=self.headers, verify=False, timeout=self.timeout).text)
-        raw_data = json.loads(data)
-        show, play_urls = [], []
-        if 'data' in raw_data:
-            data = raw_data['data']
-        else:
-            data = raw_data
-        classify = data.get('classify',data.get('category',data.get('vodClass')))
-        if isinstance(classify, str) and any(i in classify for i in self.targets): return None
-        urls2 = []
-        for i in data.get('episodes',data.get('episodeList',[])):
-            if isinstance(i,dict) and 'episode' in i:
-                urls = []
-                for j in i['episode']:
-                    urls.append(f"{j['name']}${j['url']}")
-                show.append(i.get('title', i.get('name')))
-                play_urls.append('#'.join(urls))
-            else:
-                urls2.append(f"{i['name']}${i['url']}")
-        if urls2:
-            show.append('1线')
-            play_urls = ['#'.join(urls2)]
-        if not(show and play_urls) and 'datas' in raw_data:
-            for i in raw_data['datas']:
-                show.append(i['name'])
-                play_urls.append(i['urls'])
-        video = {
-            'vod_id': ids[0],
-            'vod_name': data.get('name',data.get('vodName')),
-            'vod_pic': data.get('pic',data.get('vodPic')),
-            'vod_remarks': data.get('remarks',data.get('vodRemarks')),
-            'vod_year': data.get('year',data.get('vodYear')),
-            'vod_area': data.get('area',data.get('vodArea')),
-            'vod_actor': data.get('actor',data.get('vodActor')),
-            'vod_director': data.get('director',data.get('vodDirector')),
-            'vod_content': data.get('details',data.get('vodContent',data.get('content'))),
-            'vod_play_from': '$$$'.join(show),
-            'vod_play_url': '$$$'.join(play_urls),
-            'type_name': classify
-        }
-        return {'list': [video]}
-
-    def playerContent(self, flag, url, vip_flags):
+        if not self.host:
+            return None
         try:
-            if '|' in url: url = self.raw_url(url)
+            url = (
+                f'{self.host}/user/movie/cms/v1/category'
+                f'?count=20&names={tid}&page={pg}'
+            )
+            raw = self.fetch(url, headers=self.headers,
+                             verify=False, timeout=self.timeout).text
+            data = json.loads(self.decrypt(raw)).get('datas') or []
+            return {'list': self.arr2vods(data)}
+        except Exception as e:
+            print(f'[categoryContent] {e}', file=sys.stderr)
+            return {'list': []}
+
+    # ---------- 搜索 ----------
+    def searchContent(self, key, quick, pg='1'):
+        if not self.host or str(pg) != '1':
+            return None
+        try:
+            url = (
+                f'{self.host}/user/movie/cms/v1/search'
+                f'?name={key}&page=1&count=10'
+            )
+            raw = self.fetch(url, headers=self.headers,
+                             verify=False, timeout=self.timeout).text
+            root = json.loads(self.decrypt(raw))
+            data = root.get('datas') or root.get('data') or []
+            if isinstance(data, dict):
+                data = [data]
+            return {'list': self.arr2vods(data), 'page': pg}
+        except Exception as e:
+            print(f'[searchContent] {e}', file=sys.stderr)
+            return {'list': [], 'page': pg}
+
+    # ---------- 详情 ----------
+    def detailContent(self, ids):
+        if not self.host:
+            return None
+
+        try:
+            vid = str(ids[0])
+            url = f'{self.host}/user/movie/cms/v1/play?id={vid}'
+
+            raw = self.fetch(url, headers=self.headers,
+                             verify=False, timeout=self.timeout).text
+            root = json.loads(self.decrypt(raw))
+
+            data = root.get('data') or {}
+            datas = root.get('datas') or []
+
+            # 播放线路：每条 {"id":x, "name":"kdjx", "urls":"正片$https://...m3u8"}
+            show, play_urls = [], []
+            for idx, line in enumerate(datas):
+                line_name = line.get('name') or f'线路{idx + 1}'
+                urls = line.get('urls') or ''
+                if urls:
+                    show.append(line_name)
+                    play_urls.append(urls)
+
+            video = {
+                'vod_id': vid,
+                'vod_name': data.get('name') or '',
+                'vod_pic': data.get('pic') or '',
+                'vod_remarks': data.get('remarks') or '',
+                'vod_year': data.get('year') or '',
+                'vod_area': data.get('area') or '',
+                'vod_actor': data.get('actor') or '',
+                'vod_director': data.get('director') or '',
+                'vod_content': data.get('content') or '',
+                'vod_play_from': '$$$'.join(show),
+                'vod_play_url': '$$$'.join(play_urls),
+                'type_name': data.get('classify') or data.get('category') or '',
+            }
+            return {'list': [video]}
+        except Exception as e:
+            print(f'[detailContent] {e}', file=sys.stderr)
+            return None
+
+    # ---------- 播放 ----------
+    def playerContent(self, flag, url, vip_flags):
+        # url 格式："正片$https://..."，取出 $ 后面的部分
+        if '$' in url:
+            url = url.split('$', 1)[1]
+
+        # 如果不以 http 开头，尝试 base64 解码
+        try:
+            if url and not url.startswith('http'):
+                decoded = base64.b64decode(url + '=' * (-len(url) % 4))
+                decoded = decoded.decode('utf-8', errors='ignore')
+                if decoded.startswith('http'):
+                    url = decoded
         except Exception:
             pass
-        return { 'jx': 0, 'parse': '0', 'url': url, 'header': {'User-Agent':'ijkplayer/1.0.0 (Linux;Android 11) ExoPlayerLib/2.14.1','Accept-Encoding':'gzip'}}
 
-    def decrypt(self,data):
+        # 跟踪 redirect 拿真实地址（若是 302）
+        try:
+            real = self.raw_url(url)
+            if real:
+                url = real
+        except Exception:
+            pass
+
+        return {
+            'jx': 0,
+            'parse': '0',
+            'url': url,
+            'header': {
+                'User-Agent': (
+                    'ijkplayer/1.0.0 (Linux;Android 11) '
+                    'ExoPlayerLib/2.14.1'
+                ),
+                'Accept-Encoding': 'gzip',
+            },
+        }
+
+    # ---------- 解密 ----------
+    def decrypt(self, data: str) -> str:
         prefix = "AkEdSJx"
-        if not data.startswith(prefix): return data
-        base64_str = data[len(prefix):]
-        decode_bytes = base64.b64decode(base64_str)
-        if len(decode_bytes) < 32:
-            raise ValueError("加密数据长度不足")
-        key = decode_bytes[:16]
-        iv = decode_bytes[16:32]
-        ciphertext = decode_bytes[32:]
-        cipher = AES.new(key, AES.MODE_CBC, iv)
-        plaintext_bytes = unpad(cipher.decrypt(ciphertext), AES.block_size)
-        return plaintext_bytes.decode('utf-8')
+        if not data.startswith(prefix):
+            return data
 
-    def arr2vods(self,arr):
+        raw = base64.b64decode(data[len(prefix):])
+        if len(raw) < 32:
+            raise ValueError("加密数据太短")
+
+        key, iv, ct = raw[:16], raw[16:32], raw[32:]
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        plaintext = unpad(cipher.decrypt(ct), AES.block_size).decode('utf-8')
+
+        # 部分接口是双层：先 AES 再 Base64
+        p = plaintext.strip()
+        try:
+            decoded = base64.b64decode(
+                p + "=" * ((4 - len(p) % 4) % 4)
+            ).decode('utf-8')
+            if decoded.lstrip()[:1] in ('{', '['):
+                return decoded
+        except Exception:
+            pass
+
+        return plaintext
+
+    # ---------- 列表转 vod ----------
+    def arr2vods(self, arr):
         videos = []
-        for i in arr:
-            classify = i.get('classify',i.get('category',i.get('vodClass')))
-            if not(isinstance(classify, str) and any(i in classify for i in self.targets)):
-                videos.append({
-                    'vod_id': i.get('url',i.get('vodId',i.get('id'))),
-                    'vod_name': i.get('name',i.get('vodName')),
-                    'vod_pic': i.get('pic',i.get('vodPic')),
-                    'vod_remarks': i.get('remarks',i.get('vodRemarks')),
-                    'vod_year': i.get('year',i.get('vodYear')),
-                    'type_name': classify
-                })
+        if not arr:
+            return videos
+
+        for item in arr:
+            vid = item.get('id') or item.get('url') or item.get('vodId')
+            if vid is None:
+                continue
+
+            videos.append({
+                'vod_id': vid,
+                'vod_name': item.get('name') or item.get('vodName') or '',
+                'vod_pic': item.get('pic') or item.get('vodPic') or '',
+                'vod_remarks': item.get('remarks') or item.get('vodRemarks') or '',
+                'vod_year': item.get('year') or item.get('vodYear') or '',
+                'type_name': (
+                    item.get('classify')
+                    or item.get('category')
+                    or item.get('vodClass')
+                    or ''
+                ),
+            })
         return videos
 
-    def raw_url(self,original_url):
+    # ---------- 获取真实地址（跟踪 302） ----------
+    def raw_url(self, original_url):
         try:
-            response = self.fetch(original_url,allow_redirects=False,stream=True,timeout=20)
+            response = self.fetch(
+                original_url, allow_redirects=False,
+                stream=True, timeout=20,
+            )
             if 300 <= response.status_code < 400:
-                redirect_location = response.headers.get('Location')
-                if redirect_location:
-                    real_url = urljoin(original_url, redirect_location)
-                    return real_url
+                loc = response.headers.get('Location')
+                if loc:
+                    return urljoin(original_url, loc)
             return original_url
         except Exception:
             return original_url
 
+    # ---------- 框架接口 ----------
     def getName(self):
-        pass
+        return self.site or 'kaiduan'
 
     def isVideoFormat(self, url):
-        pass
+        if not url:
+            return False
+        exts = ('.m3u8', '.mp4', '.flv', '.avi',
+                '.mkv', '.ts', '.mov', '.webm')
+        return any(url.lower().split('?')[0].endswith(e) for e in exts)
 
     def manualVideoCheck(self):
-        pass
+        return False
 
     def destroy(self):
         pass
 
     def localProxy(self, param):
-        pass
+        try:
+            if isinstance(param, dict):
+                url = param.get('url') or param.get('src') or ''
+            else:
+                url = str(param)
+            if not url:
+                return [404, 'text/plain', b'']
+            real_url = self.raw_url(url)
+            return [302, 'text/plain', b'', {'Location': real_url}]
+        except Exception as e:
+            print(f'[localProxy] {e}', file=sys.stderr)
+            return [500, 'text/plain', str(e).encode('utf-8')]

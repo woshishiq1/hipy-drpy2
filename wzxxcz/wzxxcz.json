@@ -454,12 +454,6 @@
             "api": "./py/悦听吧.py"
         },
 		{
-            "key": "易听书网",
-            "name": "🎵易听书网",
-            "type": 3,
-            "api": "./py/易听书网🍀TG @hshsjk9.py"
-        },
-		{
             "key": "堇夏听书",
             "name": "🎵堇夏听书",
             "type": 3,
@@ -495,12 +489,6 @@
             "name": "🎵呦呦DJ",
             "type": 3,
             "api": "./py/DJ呦呦.py"
-        },
-		{
-            "key": "影子音乐",
-            "name": "🎵影子音乐",
-            "type": 3,
-            "api": "./py/影子音乐.py"
         },
 		{
             "key": "戏曲多多",
@@ -664,6 +652,25 @@
                     "https://666.666291.xyz",
                     "https://www.muou.site",
                     "https://www.muou.asia"
+                ]
+            },
+            "timeout": 60
+        },
+		{
+            "key": "蜡笔",
+            "name": "🖍️蜡笔4K",
+            "type": 3,
+            "api": "csp_PanWebShare",
+            "searchable": 1,
+            "quickSearch": 1,
+            "filterable": 1,
+            "changeable": 1,
+            "ext": {
+                "site": [
+                    "https://www.fmcf.fun",
+                    "https://www.mmpanpan.site",
+                    "http://tvpanpan.site",
+                    "http://www.tvpanpan.site"
                 ]
             },
             "timeout": 60
@@ -2047,6 +2054,12 @@
             "api": "./py/Auete影视.py"
         },
 		{
+            "key": "电影人生",
+            "name": "🍊电影人生",
+            "type": 3,
+            "api": "./py/电影人生.py"
+        },
+		{
             "key": "爬虫影视",
             "name": "🐛爬虫影视",
             "type": 1,
@@ -2238,7 +2251,7 @@
                 "decrypt": "1"
             }
         },
-        {
+		{
             "key": "苹果",
             "name": "🍎苹果影视",
             "type": 3,
@@ -2248,6 +2261,7 @@
             "filterable": 1,
             "ext": {
                 "appName": "小苹果",
+                "commonKey": "ed5fdsgucxumegqa",
                 "publicKey": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCduNEnfxGaLuQRk5ABzXHhPV43zi00sCHjLo8BYc+Wi6xXm2b4v0i28Sq4WlNCKhseft9fz8kO/qLr6/022o1RcuOU7e4GFL3U9WnNODwRBYSYWd+K8nqpI/tAUDmZEBGRWqjrc7x6aMl3A+xpnWkLbPCLsuhbuuUE3tv09oeOpwIDAQAB",
                 "dataKey": "S0VNDTJHOFHHCNMRAW5IV2TOS2PBPQ==",
                 "dataIv": "OC1A06E197EF10CF3F6058CA7A803B5E",
@@ -10980,41 +10994,6 @@
                 "字母值": "*",
                 "排序": "时间&人气&评分",
                 "排序值": "time&hits&score"
-            }
-        },
-        {
-            "key": "八一影视",
-            "name": "🕊️八一影视",
-            "type": 3,
-            "api": "csp_XBPQ",
-            "ext": {
-                "请求头": "User-Agent$MOBILE_UA",
-                "编码": "UTF-8",
-                "主页url": "https://t.koeynoshit.com/",
-				"二次截取": "",
-                "数组": "lazyload&&</p>",
-                "标题": "<a*>&&</a>",
-                "图片": "data-original=\"&&\"",
-                "副标题": "<span class=\"video-title text-nowrap ml-xs-0 mr-xs-0\">&&</span>",
-                "链接": "href=\"&&\"",
-				"影片年代": "年份：&&</li>",
-                "影片地区": "地区：&&</li>",
-                "影片类型": "类型：&&</li>",
-                "状态": "状态：&&</li>",
-                "导演": "导演：&&</p>",
-                "主演": "主演：&&</p>",
-                "简介": "🍊小橙子为您介绍剧情👉请不要相信视频中的广告，以免上当受骗！+剧情：&&</div>",
-				"线路二次截取": "",
-                "线路数组": "#ewave-playlist&&</li>",
-                "线路标题": "javascript:;\">&&<",
-                "播放二次截取": "",
-                "播放数组": "id=\"ewave-playlist&&</ul>",
-                "倒序": "0",
-                "播放列表": "<a&&/a>[不包含:APP高清]",
-                "播放标题": ">&&</a>",
-                "播放链接": "href=\"&&\"",
-                "分类url": "https://t.koeynoshit.com/noshisw/{cateId}--------{catePg}---{year}.html",
-                "分类": "电影$1#电视剧$2#综艺$3#动漫$4#短剧$5#"
             }
         },
         {

@@ -1,442 +1,331 @@
-# coding=utf-8
-# 本资源来源于互联网公开渠道，仅可用于个人学习爬虫技术。
-# 严禁将其用于任何商业用途，下载后请于24小时内删除，搜索结果均来自源站，本人不承担任何责任。
-import base64
-import requests
-import json
-import re
-import sys
-from urllib.parse import quote, unquote
-from base.spider import Spider as BaseSpider
-sys.path.append("..")
-class Spider(BaseSpider):
-    def __init__(self):
-        self.name = "Gimy剧迷"
-        self.host = "https://gimyai.tw"
-        self.headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/146.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Referer": "https://gimyai.tw/",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        }
-        self.categories = [
-            {"type_id": "1", "type_name": "电影"},
-            {"type_id": "2", "type_name": "电视剧"},
-            {"type_id": "4", "type_name": "动漫"},
-            {"type_id": "29", "type_name": "综艺"},
-            {"type_id": "34", "type_name": "短剧"},
-            {"type_id": "13", "type_name": "陆剧"},
-        ]
-        filter_value = [
-            {"n": "最新", "v": "time"},
-            {"n": "人气", "v": "hits"},
-            {"n": "评分", "v": "score"},
-        ]
-        self.filters = {
-            key: [{"key": "by", "name": "排序", "init": "time", "value": filter_value}]
-            for key in ["1", "2", "4", "29", "34", "13"]
-        }
-        self.filter_def = {key: {"by": "time"} for key in self.filters}
-        self.t2s_map = {
-            "鬥": "斗",
-            "羅": "罗",
-            "陸": "陆",
-            "劇": "剧",
-            "藝": "艺",
-            "綜": "综",
-            "動": "动",
-            "畫": "画",
-            "機": "机",
-            "戰": "战",
-            "鋼": "钢",
-            "彈": "弹",
-            "雲": "云",
-            "狀": "状",
-            "態": "态",
-            "類": "类",
-            "國": "国",
-            "導": "导",
-            "簡": "简",
-            "線": "线",
-            "賊": "贼",
-        }
-    def init(self, extend=""):
-        return None
-    def getName(self):
-        return self.name
-    def homeContent(self, filter):
-        return {"class": self.categories, "filters": self.filters}
-    def _build_url(self, href):
-        raw = str(href or "").strip()
-        if not raw:
-            return ""
-        if raw.startswith(("http://", "https://")):
-            return raw
-        if raw.startswith("//"):
-            return "https:" + raw
-        return self.host + "/" + raw.lstrip("/")
-    def _normalize_text(self, text):
-        value = re.sub(r"<[^>]+>", " ", str(text or ""))
-        return re.sub(r"\s+", " ", value.replace("&nbsp;", " ")).strip()
-    def _to_display_text(self, text):
-        clean = self._normalize_text(text)
-        for trad, simp in self.t2s_map.items():
-            clean = clean.replace(trad, simp)
-        return clean
-    def _extract_cards(self, html):
-        root = self.html(html)
-        if root is None:
-            return []
-        items = []
-        seen = set()
-        for anchor in root.xpath("//a[contains(@href,'/detail/')]"):
-            href = (anchor.xpath("./@href") or [""])[0].strip()
-            matched = re.search(r"/detail/(\d+)\.html", href)
-            if not matched:
-                continue
-            vod_id = matched.group(1)
-            if vod_id in seen:
-                continue
-            title = (
-                (anchor.xpath("./@title") or [""])[0].strip()
-                or (anchor.xpath(".//img/@alt") or [""])[0].strip()
-                or "".join(anchor.xpath(".//text()")).strip()
-            )
-            pic = (
-                (anchor.xpath("./@data-original") or [""])[0].strip()
-                or (anchor.xpath("./@data-src") or [""])[0].strip()
-                or (anchor.xpath(".//img/@src") or [""])[0].strip()
-            )
-            parent = anchor.getparent()
-            remarks = ""
-            if parent is not None:
-                remarks = "".join(
-                    parent.xpath(".//*[contains(@class,'note') or contains(@class,'text')]//text()")
-                ).strip()
-            seen.add(vod_id)
-            items.append(
-                {
-                    "vod_id": vod_id,
-                    "vod_name": self._to_display_text(title),
-                    "vod_pic": self._build_url(pic),
-                    "vod_remarks": self._to_display_text(remarks),
-                }
-            )
-        return items
-    def _build_category_url(self, tid, pg, extend):
-        page = int(pg)
-        values = dict(self.filter_def.get(str(tid), {"by": "time"}))
-        if isinstance(extend, dict):
-            values.update(extend)
-        by = str(values.get("by", "time"))
-        url = f"{self.host}/genre/{tid}.html"
-        if page > 1 or by != "time":
-            url += f"?page={page}&by={by}"
-        return url
-    def _request_html(self, path_or_url, referer=None):
-        target = path_or_url if str(path_or_url).startswith("http") else self._build_url(path_or_url)
-        headers = dict(self.headers)
-        headers["Referer"] = referer or self.headers["Referer"]
-        response = self.fetch(target, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return ""
-        return response.text or ""
-    def homeVideoContent(self):
-        html = self._request_html(self.host)
-        return {"list": self._extract_cards(html)[:24]}
-    def categoryContent(self, tid, pg, filter, extend):
-        url = self._build_category_url(str(tid), str(pg), extend if isinstance(extend, dict) else {})
-        items = self._extract_cards(self._request_html(url))
-        page = int(pg)
-        pagecount = page + 1 if len(items) >= 20 else page
-        return {
-            "list": items,
-            "page": page,
-            "pagecount": pagecount,
-            "limit": 20,
-            "total": page * 20 + len(items),
-        }
-    def _pick_info(self, html, label):
-        matched = re.search(rf"<span[^>]*>\s*{re.escape(label)}[：:]\s*</span>\s*(.*?)(?:</div>|</li>)", str(html or ""), re.S)
-        return self._to_display_text(matched.group(1) if matched else "")
-    def _parse_play_sources(self, html):
-        root = self.html(html)
-        if root is None:
-            return []
-        groups = []
-        sources = root.xpath("//span[contains(@class,'source') and @data-route-switch]")
-        if sources:
-            for src in sources:
-                sid = (src.xpath("./@data-route-switch") or [""])[0].strip()
-                name = self._to_display_text("".join(src.xpath(".//text()")))
-                if not sid:
-                    continue
-                episodes = []
-                seen_eps = set()
-                for ep_anchor in root.xpath(f"//div[contains(@class,'episodes-route') and @data-route-sid='{sid}']//a[contains(@href,'/play/')]"):
-                    href = (ep_anchor.xpath("./@href") or [""])[0].strip()
-                    matched = re.search(r"/play/(\d+-\d+-\d+)\.html", href)
-                    if not matched:
-                        continue
-                    ep_id = matched.group(1)
-                    if ep_id in seen_eps:
-                        continue
-                    seen_eps.add(ep_id)
-                    title = self._to_display_text("".join(ep_anchor.xpath(".//text()"))) or "正片"
-                    episodes.append(f"{title}${ep_id}")
-                if episodes:
-                    groups.append({"from": name or f"线路{sid}", "urls": "#".join(episodes)})
-        if not groups:
-            tabs = []
-            for tab in root.xpath("//*[@id='playTab']//a[starts-with(@href,'#con_playlist_')]"):
-                tabs.append(
-                    {
-                        "id": (tab.xpath("./@href") or [""])[0].replace("#", ""),
-                        "name": self._to_display_text("".join(tab.xpath(".//text()"))),
-                    }
-                )
-            for tab in tabs:
-                episodes = []
-                seen_eps = set()
-                for anchor in root.xpath(f"//*[@id='{tab['id']}']//a[contains(@href,'/play/')]"):
-                    href = (anchor.xpath("./@href") or [""])[0].strip()
-                    matched = re.search(r"/play/(\d+-\d+-\d+)\.html", href)
-                    if not matched:
-                        continue
-                    ep_id = matched.group(1)
-                    if ep_id in seen_eps:
-                        continue
-                    seen_eps.add(ep_id)
-                    title = self._to_display_text("".join(anchor.xpath(".//text()"))) or "正片"
-                    episodes.append(f"{title}${ep_id}")
-                if episodes:
-                    groups.append({"from": tab["name"], "urls": "#".join(episodes)})
-        if not groups:
-            episodes = []
-            seen_urls = set()
-            for anchor in root.xpath("//a[contains(@href,'/play/')]"):
-                href = (anchor.xpath("./@href") or [""])[0].strip()
-                matched = re.search(r"/play/(\d+-\d+-\d+)\.html", href)
-                if not matched:
-                    continue
-                vid = matched.group(1)
-                if vid in seen_urls:
-                    continue
-                seen_urls.add(vid)
-                title = self._to_display_text("".join(anchor.xpath(".//text()"))) or "正片"
-                episodes.append(f"{title}${vid}")
-            if episodes:
-                groups.append({"from": "高清线路", "urls": "#".join(episodes)})
-        return groups
-    def _extract_year_from_category(self, html):
-        matched = re.search(r'<span[^>]*>\s*類別[：:]\s*</span>\s*<b>[^·]*·\s*(\d{4})\s*</b>', str(html or ""), re.S)
-        return matched.group(1) if matched else ""
-    def _parse_detail_page(self, html, vod_id):
-        root = self.html(html)
-        if root is None:
-            return {"list": []}
-        title = "".join(
-            root.xpath("//h1[contains(@class,'text-overflow')][1]//text()") or root.xpath("//h1[1]//text()")
-        ).strip()
-        poster = ((root.xpath("//meta[@property='og:image']/@content") or [""])[0]).strip()
-        content = "".join(
-            root.xpath("//div[contains(@class,'desc')]//p//text()")
-        ).strip()
-        actors = []
-        for div in root.xpath("//div[contains(@class,'detail__meta')]//div[contains(.,'主演')]//a"):
-            text = "".join(div.xpath(".//text()")).strip()
-            if text:
-                actors.append(self._to_display_text(text))
-        directors = []
-        for div in root.xpath("//div[contains(@class,'detail__meta')]//div[contains(.,'導演') or contains(.,'导演')]"):
-            for a in div.xpath(".//a"):
-                text = "".join(a.xpath(".//text()")).strip()
-                if text:
-                    directors.append(self._to_display_text(text))
-                    break
-        play_groups = self._parse_play_sources(html)
-        return {
-            "list": [
-                {
-                    "vod_id": str(vod_id),
-                    "vod_name": self._to_display_text(title),
-                    "vod_pic": self._build_url(poster),
-                    "vod_content": self._to_display_text(content),
-                    "vod_remarks": self._pick_info(html, "狀態") or self._pick_info(html, "状态"),
-                    "type_name": self._pick_info(html, "類別") or self._pick_info(html, "类别"),
-                    "vod_year": self._pick_info(html, "年代") or self._pick_info(html, "年份") or self._extract_year_from_category(html),
-                    "vod_area": self._pick_info(html, "國家/地區") or self._pick_info(html, "国家/地区"),
-                    "vod_actor": ",".join([item for item in actors if item]),
-                    "vod_director": ",".join([item for item in directors if item]),
-                    "vod_play_from": "$$$".join([item["from"] for item in play_groups]),
-                    "vod_play_url": "$$$".join([item["urls"] for item in play_groups]),
-                }
-            ]
-        }
-    def detailContent(self, ids):
-        raw = ids[0]
-        url = raw if str(raw).startswith("http") else f"{self.host}/detail/{raw}.html"
-        html = self._request_html(url)
-        matched = re.search(r"/detail/(\d+)\.html", url)
-        vod_id = matched.group(1) if matched else str(raw)
-        return self._parse_detail_page(html, vod_id)
-    def _normalize_search_keyword(self, text):
-        value = self._to_display_text(text).lower()
-        return re.sub(r"[\s\-_—–·•:：,，.。!?！？'""“”‘’()（）\[\]【】{}]", "", value)
-    def _build_search_tokens(self, keyword):
-        base = self._normalize_search_keyword(keyword)
-        if not base:
-            return []
-        tokens = [base]
-        simplified = re.sub(
-            r"线上看|線上看|全集|連續劇|连续剧|電視劇|电视剧|動漫|动漫|電影|电影|綜藝|综艺",
-            "",
-            base,
-        ).strip()
-        if simplified and simplified not in tokens:
-            tokens.append(simplified)
-        stripped = re.sub(r"第\d+[集季部篇]?$", "", simplified)
-        stripped = re.sub(r"\d+$", "", stripped)
-        if stripped and stripped not in tokens:
-            tokens.append(stripped)
-        return sorted([item for item in tokens if item], key=len, reverse=True)
-    def _score_search_result(self, vod_name, keyword):
-        name = self._normalize_search_keyword(vod_name)
-        best = 0
-        for token in self._build_search_tokens(keyword):
-            if name == token:
-                best = max(best, 1000 + len(token))
-            elif name.startswith(token):
-                best = max(best, 800 + len(token))
-            elif token in name:
-                best = max(best, 600 + len(token))
-            elif len(name) >= 2 and name in token:
-                best = max(best, 450 + len(name))
-        return best
-    def _refine_search_results(self, items, keyword):
-        scored = []
-        for item in items:
-            score = self._score_search_result(item.get("vod_name", ""), keyword)
-            if score > 0:
-                scored.append((score, item))
-        if scored:
-            scored.sort(key=lambda pair: (-pair[0], pair[1].get("vod_name", "")))
-            return [item for _, item in scored]
-        loose_key = self._normalize_search_keyword(keyword)
-        return [
-            item
-            for item in items
-            if loose_key and loose_key in self._normalize_search_keyword(item.get("vod_name", ""))
-        ]
-    def searchContent(self, key, quick, pg="1"):
-        url = f"{self.host}/find/-------------.html?wd={quote(str(key))}&page={pg}"
-        html = self._request_html(url)
-        raw_items = self._extract_cards(html)
-        items = self._refine_search_results(raw_items, key)
-        page = int(pg)
-        pagecount = page + 1 if len(raw_items) >= 20 else page
-        return {
-            "list": items,
-            "page": page,
-            "pagecount": pagecount,
-            "limit": len(items),
-            "total": len(items),
-        }
-    def _extract_player_data(self, html):
-        matched = re.search(r"var\s+player_data\s*=\s*(\{[\s\S]*?\})\s*;?\s*</script>", str(html or ""), re.S)
-        if not matched:
-            return {}
+# -*- coding: utf-8 -*-
+from base.spider import Spider
+from Crypto.Cipher import ARC4,AES
+from urllib.parse import quote_plus
+from Crypto.Util.Padding import unpad
+import re,sys,time,uuid,json,base64,urllib3,hashlib,secrets,binascii
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+sys.path.append('..')
+
+class Spider(Spider):
+    headers = {
+        'User-Agent': "Dalvik/2.1.0",
+        'Connection': "Keep-Alive",
+        'Accept-Encoding': "gzip"
+    }
+    headers2 = {**headers}
+    client_mode,max_client,app_id,pg_url,yry_url,client,base_path,pg_key,yry_key,token,user,pwd,markcode,login_mode,app_name,model,cache_key = 0,2,'','','','','','','','','','','','','','',''
+
+    def init(self, extend=''):
         try:
-            return json.loads(matched.group(1))
+            ext = json.loads(extend)
         except Exception:
-            return {}
-    def _decode_play_url(self, player_data):
-        raw = str(player_data.get("url", "")).strip()
-        encrypt = str(player_data.get("encrypt", "0")).strip()
-        if not raw:
-            return ""
-        if encrypt == "1":
-            return unquote(raw)
-        if encrypt == "2":
-            try:
-                decoded = base64.b64decode(raw).decode("utf-8")
-                return unquote(decoded)
-            except Exception:
-                return ""
-        return raw
-    def _is_direct_media_url(self, url):
-        return bool(re.match(r"^https?://.*\.(m3u8|mp4|flv|m4s)(\?.*)?$", str(url or ""), re.I))
-    def _build_parse_context(self, raw_url, play_from, play_page_url):
-        base = "https://play.gimyai.tw/v/"
-        referer = f"https://play.gimyai.tw/v/?url={quote(raw_url)}"
-        if play_from in ["JD4K", "JD2K", "JDHG", "JDQM"]:
-            base = "https://play.gimyai.tw/d/"
-            referer = (
-                f"https://play.gimyai.tw/d/?url={quote(raw_url)}"
-                f"&jctype={play_from}&next={quote(play_page_url)}"
-            )
-        elif play_from == "NSYS":
-            base = "https://play.gimyai.tw/n/"
-            referer = (
-                f"https://play.gimyai.tw/n/?url={quote(raw_url)}"
-                f"&jctype={play_from}&next={quote(play_page_url)}"
-            )
-        return {
-            "parse_url": f"{base}parse.php?url={quote(raw_url)}&_t=1",
-            "referer": referer,
-            "origin": "https://play.gimyai.tw",
+            ext = {}
+        self.user = ext.get('username')
+        self.pwd = ext.get('password')
+        self.markcode = ext.get('markcode')
+        self.app_name = ext.get('app_name', 'xiaomi')
+        self.model = ext.get('model', 'xiaomi')
+        cos_url = ext.get('CosUrl', 'http://2025-1329689796.cos.ap-guangzhou.myqcloud.com/kanke/app1.json')
+        self.cache_key = hashlib.md5(cos_url.encode('utf-8')).hexdigest()
+        try:
+            number1 = 'No00000'
+            number = self.md5(number1)
+            number_key = self.md5(f'{number1}SmtEk1')
+            payload = {'t': str(int(time.time())), 'key': self.rc4_encrypt(number, number_key)}
+            self.app_id = '10000'
+            res = self.fetch(cos_url, headers=self.headers, verify=False).json()
+            notice = res['msg']['notice']
+            main_host = self.decode(notice['content'])
+            self.headers2['Authorization'] = self.decode(notice['type'])
+            response = self.post(f'{main_host}?app={self.app_id}', data=payload, headers=self.headers2, verify=False).json()
+            data = response['data']
+            maink = self.rc4_decrypt(data['Maink'], number_key)
+            self.pg_key = self.rc4_decrypt(data['pg'], maink)
+            self.yry_key = self.rc4_decrypt(data['yry'], maink)
+            key_time = self.rc4_decrypt(data['MT'], maink)
+            pg_raw_url = data['pgUrl']
+            yry_raw_url = data['yryUrl']
+            aes_key = self.base64_encode(f"{key_time}{pg_raw_url[:14]}")
+            aes_iv = self.base64_encode(f'{key_time}{yry_raw_url[:2]}').ljust(16)
+            pg_url = self.aes_decrypt(self.base64_decode(pg_raw_url[32:]), aes_key, aes_iv)
+            yry_url = self.aes_decrypt(self.base64_decode(yry_raw_url[16:]), aes_key, aes_iv)
+            self.base_path = self.rc4_decrypt(data['HOST'])
+            self.client = self.rc4_decrypt(data['newClient'])
+            self.login_mode = data.get('Login',4)
+            self.pg_url = pg_url
+            self.yry_url = yry_url
+        except Exception:
+            self.pg_url = ''
+
+    def homeContent(self, filter):
+        if not self.pg_url: return None
+        response = self.fetch(f'{self.pg_url}/api.php/{self.base_path}/Category?{self.sign()}', headers=self.headers2, verify=False).text
+        try:
+            data = self.rc4_decrypt(response)
+            data2 = json.loads(data)
+        except Exception:
+            data2 = json.loads(response)
+        classes = []
+        for i in data2:
+            if isinstance(i,dict) and i['type_status'] == 1:
+                classes.append({'type_id': i['type_en'], 'type_name': i['type_name']})
+        return {'class': classes}
+
+    def homeVideoContent(self):
+        if not self.pg_url: return None
+        response = self.fetch(f'{self.pg_url}/api.php/{self.base_path}/top?{self.sign()}', headers=self.headers2, verify=False).json()
+        videos = self.arr2vods(response['data'])
+        return {'list': videos}
+
+    def categoryContent(self, tid, pg, filter, extend):
+        if not self.pg_url: return None
+        response = self.fetch(f'{self.pg_url}/api.php/{self.base_path}/vod/?ac=list&class={tid}&page={pg}&{self.sign()}', headers=self.headers2, verify=False).text
+        try:
+            data = self.rc4_decrypt(response)
+            data2 = json.loads(data)
+        except Exception:
+            data2 = json.loads(response)
+        videos = self.arr2vods(data2['data'])
+        return {'list': videos,'pagecount':data2['totalpage'], 'page': pg}
+
+    def searchContent(self, key, quick, pg='1'):
+        if not self.pg_url: return None
+        response = self.fetch(f'{self.pg_url}/api.php/{self.base_path}/So/?ac=list&zm={key}&page={pg}&{self.sign()}', headers=self.headers2, verify=False).text
+        try:
+            data = self.rc4_decrypt(response)
+            data2 = json.loads(data)
+        except Exception:
+            data2 = json.loads(response)
+        videos = self.arr2vods(data2['data'])
+        return {'list': videos, 'page': pg}
+
+    def detailContent(self, ids):
+        if not self.pg_url: return None
+        self.client_mode = 0
+        if not self.token: self.auto_logon()
+        req_data = f'token={self.token}&t={int(time.time())}'
+        payload = {'data': self.rc4_encrypt(req_data),'sign': self.md5(f'{req_data}&{self.pg_key}')}
+        res = self.post(f'{self.yry_url}/api.php?app={self.app_id}&act=motion',data=payload, headers=self.headers2, verify=False).json()
+        self.client_mode = int(res['msg']['Clientmode'])
+        if self.client_mode == 0 and res['msg']['Try'] != 1: return None
+        response = self.fetch(f'{self.pg_url}/api.php/{self.base_path}/vod/{ids[0]}&{self.sign()}', headers=self.headers2, verify=False).text
+        try:
+            data2 = json.loads(response)
+        except Exception:
+            data = self.rc4_decrypt(response)
+            data2 = json.loads(data)
+        try:
+            player_ = self.rc4_decrypt(data2['player'])
+            player = json.loads(player_)
+        except Exception:
+            player = json.loads(response['player'])
+        vod_name = data2['title']
+        shows, play_urls = [], []
+        for show, raw_urls in data2['videolist'].items():
+            name = None
+            for i in player:
+                if i['from'] == show and i['from'] != i['show']:
+                    name = i['show']
+                    break
+            urls = []
+            for j in raw_urls:
+                title = j['title']
+                series = quote_plus(f"{vod_name}-{title}")
+                urls.append(f"{title}${series}@{j['url']}")
+            play_urls.append('#'.join(urls))
+            if name:
+                shows.append(f'{name}\u2005({show})')
+            else:
+                shows.append(show)
+        video = {
+            'vod_id': ids[0],
+            'vod_name': vod_name,
+            'vod_pic': data2['img_url'],
+            'vod_remarks': data2['trunk'],
+            'vod_year': data2['pubtime'],
+            'vod_area': ','.join(data2['area']),
+            'vod_actor': ','.join(data2['actor']),
+            'vod_director': ','.join(data2['director']),
+            'vod_content': data2['intro'],
+            'vod_play_from': '$$$'.join(shows),
+            'vod_play_url': '$$$'.join(play_urls),
+            'type_name': ','.join(data2['type'])
         }
-    def playerContent(self, flag, id, vipFlags):
-        play_id = str(id)
-        play_page_url = play_id if play_id.startswith("http") else f"{self.host}/play/{play_id}.html"
-        page_headers = {
-            "User-Agent": self.headers["User-Agent"],
-            "Referer": play_page_url,
-            "Origin": self.host,
-        }
-        html = self._request_html(play_page_url, referer=play_page_url)
-        player_data = self._extract_player_data(html)
-        raw_url = self._decode_play_url(player_data)
-        if self._is_direct_media_url(raw_url):
-            return {
-                "parse": 0,
-                "jx": 0,
-                "url": raw_url,
-                "header": {"User-Agent": self.headers["User-Agent"], "Referer": play_page_url},
-            }
-        if raw_url:
-            context = self._build_parse_context(raw_url, str(player_data.get("from", "")).strip(), play_page_url)
-            parse_text = self._request_html(context["parse_url"], referer=context["referer"])
+        return {'list': [video]}
+
+    def playerContent(self, flag, vid, vip_flags):
+        jx,url = 0,''
+        series, raw_url = vid.split('@',1)
+        self.client_mode = 1
+        base_path = f'&account={self.user}&password={self.pwd}&series={series}&edition=1.0'
+        cont = 0
+        for i in range(1,4):
+            if cont > self.max_client:
+                break
             try:
-                parse_json = json.loads(parse_text or "{}")
+                if self.client.startswith('http'):
+                    if i == 1:
+                        path = f'{self.client}/?url={raw_url}'
+                    else:
+                        path = f'{self.client}{i}/?url={raw_url}'
+                    if self.client_mode == 1:
+                        payload = {'app': self.app_id,'key': self.rc4_encrypt(base_path),'':''}
+                        response = self.post(path, data=payload, headers=self.headers2, verify=False).text
+                    else:
+                        response = self.post(f'{path}&app={self.app_id}{base_path}', headers=self.headers2, verify=False).text
+                    try:
+                        data = self.rc4_decrypt(response)
+                        data2 = json.loads(data)
+                    except Exception:
+                        data2 = json.loads(response)
+                    self.max_client = int(data2.get('maxClient'))
+                    play_url = data2['url']
+                    if play_url.startswith('http'):
+                        url = play_url
+                        break
+                cont += 1
             except Exception:
-                parse_json = {}
-            media_url = str(
-                parse_json.get("url") or parse_json.get("video") or parse_json.get("playurl") or ""
-            ).strip()
-            if media_url:
-                return {
-                    "parse": 0,
-                    "jx": 0,
-                    "url": media_url,
-                    "header": {
-                        "User-Agent": self.headers["User-Agent"],
-                        "Referer": context["referer"],
-                        "Origin": context["origin"],
-                    },
-                }
-            if raw_url.startswith("http"):
-                return {
-                    "parse": 1,
-                    "jx": 1,
-                    "url": raw_url,
-                    "header": {
-                        "User-Agent": self.headers["User-Agent"],
-                        "Referer": context["referer"],
-                    },
-                }
-        return {"parse": 1, "jx": 1, "url": play_page_url, "header": page_headers}
+                url = ''
+                cont += 1
+                continue
+        if not url:
+            try:
+                play_url = self.rc4_decrypt(raw_url)
+                if re.search(r'(?:www\.iqiyi|v\.qq|v\.youku|www\.mgtv|www\.bilibili)\.com', play_url):
+                    jx, url = 1, play_url
+            except Exception:
+                pass
+        return { 'jx': jx, 'parse': 0, 'url': url, 'header': {'User-Agent':'Windows'}}
+
+    def auto_logon(self):
+        if not self.pg_url: return
+        if self.user and self.pwd and self.markcode:
+            user, pwd, markcode = self.user, self.pwd, self.markcode
+        else:
+            account_cache_key = f'smtv_account_{self.cache_key}_V73xfmWkXa'
+            try:
+                account = self.getCache(account_cache_key)
+                user, pwd, markcode = account['username'], account['password'], account['markcode']
+            except Exception:
+                user, pwd, markcode = None, None, None
+            if not (user and pwd and markcode):
+                if self.login_mode == 2:
+                    random_account = self.android_id()
+                    user, pwd, markcode = random_account, random_account, random_account
+                elif self.login_mode == 3:
+                    random_account = self.mac()
+                    user, pwd, markcode = random_account, random_account, random_account
+                else:
+                    random_account = self.uuid_number()
+                    user, pwd, markcode = random_account, random_account, random_account
+                self.register(user, pwd, markcode)
+                self.setCache(account_cache_key, {'username': user, 'password': pwd, 'markcode': markcode})
+        self.login(user, pwd, markcode)
+
+    def login(self, user,pwd,markcode):
+        if not self.pg_url: return
+        req_data = f'account={user}&password={pwd}&markcode={markcode}&t={int(time.time())}'
+        payload = {'data': self.rc4_encrypt(req_data),'sign': self.md5(f'{req_data}&{self.pg_key}')}
+        response = self.post(f'{self.yry_url}/api.php?app={self.app_id}&act=user_logon', data=payload, headers=self.headers2, verify=False).json()
+        msg = response['msg']
+        try:
+            data = self.rc4_decrypt(msg, self.yry_key)
+            data2 = json.loads(data)
+        except Exception:
+            data2 = json.loads(msg)
+        self.token = data2['token']
+        self.user = user
+        self.pwd = pwd
+
+    def register(self, user,pwd,markcode):
+        if not self.pg_url: return
+        user_host = self.fetch(f'{self.yry_url}/ip.json', headers=self.headers).text
+        req_data = f'user={user}&password={pwd}&markcode={markcode}&t={int(time.time())}&name={self.app_name}&phone={self.model}'
+        payload = {'data': self.rc4_encrypt(req_data),'sign': self.md5(f'{req_data}&{self.pg_key}')}
+        self.post(f'http://{user_host}/api.php?app={self.app_id}&act=user_reg', data=payload, headers=self.headers2, verify=False)
+
+    def arr2vods(self, arr):
+        videos = []
+        if isinstance(arr,list):
+            for i in arr:
+                videos.append({
+                    'vod_id': i.get('tjurl', i.get('nextlink')),
+                    'vod_name': i.get('tjinfo', i.get('title')),
+                    'vod_pic': i.get('tjpicurl', i.get('pic')),
+                    'vod_remarks': i.get('state'),
+                    'vod_year': None
+                })
+        return videos
+
+    def rc4_encrypt(self, plaintext, key=None):
+        if not key: key = self.yry_key
+        key_bytes = key.encode('utf-8')
+        plaintext_bytes = plaintext.encode('utf-8')
+        cipher = ARC4.new(key_bytes)
+        ciphertext = cipher.encrypt(plaintext_bytes)
+        return binascii.hexlify(ciphertext).decode('utf-8')
+
+    def rc4_decrypt(self,ciphertext_hex, key=None):
+        if not key: key = self.pg_key
+        key_bytes = key.encode('utf-8')
+        ciphertext_bytes = binascii.unhexlify(ciphertext_hex)
+        cipher = ARC4.new(key_bytes)
+        plaintext_bytes = cipher.decrypt(ciphertext_bytes)
+        return plaintext_bytes.decode('utf-8')
+
+    def aes_decrypt(self, data, key, iv):
+        try:
+            encrypted_data = base64.b64decode(data)
+            cipher = AES.new(key.encode('utf-8'), AES.MODE_CBC, iv.encode('utf-8'))
+            decrypted_padded = cipher.decrypt(encrypted_data)
+            decrypted_data = unpad(decrypted_padded, AES.block_size)
+            return decrypted_data.decode('utf-8')
+        except Exception:
+            raise ValueError
+
+    def uuid_number(self):
+        uuid_bytes = uuid.uuid4().bytes
+        result = []
+        for i in range(9):
+            value = uuid_bytes[i] % 10
+            result.append(str(value))
+        return ''.join(result)
+
+    def mac(self):
+        mac_bytes = [secrets.randbits(8) for _ in range(6)]
+        return ''.join(f"{byte:02X}" for byte in mac_bytes)
+
+    def android_id(self):
+        return ''.join(secrets.choice('0123456789abcdef') for _ in range(16))
+
+    def sign(self):
+        timestamp = str(int(time.time()))
+        return f'key={self.rc4_encrypt(timestamp, timestamp)}&tt={timestamp}'
+
+    def base64_encode(self, data):
+        return base64.b64encode(data.encode('utf-8')).decode('utf-8')
+
+    def base64_decode(self, data):
+        return base64.b64decode(data.encode('utf-8')).decode('utf-8')
+
+    def decode(self, data):
+        return self.base64_decode(self.base64_decode(data[16:]))
+
+    def md5(self, data):
+        return hashlib.md5(data.encode('utf-8')).hexdigest()
+
+    def getName(self):
+        pass
+
+    def isVideoFormat(self, url):
+        pass
+
+    def manualVideoCheck(self):
+        pass
+
+    def destroy(self):
+        pass
+
+    def localProxy(self, param):
+        pass
