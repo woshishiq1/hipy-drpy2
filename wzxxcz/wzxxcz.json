@@ -1379,16 +1379,16 @@
             "api": "csp_Gz360"
         },
 		{
-            "key": "开端影视",
-            "name": "🍊开端影视",
+            "key": "66影视1",
+            "name": "💵66影视1",
             "type": 3,
-            "api": "./py/开端影视.py"
+            "api": "./py/66影视1.py"
         },
 		{
-            "key": "FreeOK",
-            "name": "🌱FreeOK",
+            "key": "西瓜TV",
+            "name": "🍉西瓜TV",
             "type": 3,
-            "api": "./py/FreeOK.py"
+            "api": "./py/西瓜TV.py"
         },
 		{
             "key": "初见影视",
