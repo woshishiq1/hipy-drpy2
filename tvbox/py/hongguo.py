@@ -41,6 +41,13 @@ except Exception:
         class _BaseSpider:
             pass
 
+import importlib as _hg_importlib
+
+try:
+    _BaseSpider = _hg_importlib.import_module("base.spider").Spider
+except Exception:
+    _hg_importlib = None
+
 # FongMi/TVBox 的 Chaquopy 环境未必带 cryptography，多数壳只带 pycryptodome。
 # 统一入口，避免调用点直接依赖某一个库。
 if Cipher is not None:
@@ -3679,6 +3686,45 @@ def _filter_group(key, name, values):
     return {"key": key, "name": name, "value": [{"n": n, "v": v} for n, v in values]}
 
 
+def _search_api(key: str, page: int = 1) -> dict:
+    """官网搜索 API：GET /api/search/result/?query=<词>&page=<页>，支持真翻页。"""
+    page = max(1, int(page or 1))
+    last_err = None
+    for attempt in range(3):
+        try:
+            r = requests.get(
+                SITE + "/api/search/result/",
+                params={"query": str(key or ""), "page": str(page)},
+                headers={
+                    "User-Agent": UA,
+                    "Accept": "application/json, text/plain, */*",
+                    "Accept-Language": "zh-CN,zh;q=0.9",
+                    "Referer": SITE + "/search",
+                },
+                timeout=30,
+            )
+            if r.status_code == 400:
+                # invalid_query：空词/超长词，属参数问题，不重试
+                return {}
+            r.raise_for_status()
+            data = r.json()
+            if isinstance(data, dict) and data.get("searchList") is not None:
+                return data
+            last_err = "bad payload"
+        except Exception as err:
+            last_err = err
+        try:
+            time.sleep(0.5 * (attempt + 1))
+        except Exception:
+            pass
+    if last_err:
+        try:
+            print("hg _search_api failed: %s" % last_err)
+        except Exception:
+            pass
+    return {}
+
+
 def _search_loader(key: str) -> dict:
     """拉取搜索页 loaderData，失败重试。"""
     last = {}
@@ -3773,7 +3819,7 @@ class Spider(_BaseSpider):
     def download(self, path, url):
         return ""
 
-    def liveContent(self):
+    def liveContent(self, url=""):
         return {}
 
     def isVPAYard(self, flag):
@@ -3952,6 +3998,19 @@ class Spider(_BaseSpider):
         if key in ("漫剧", "动漫短剧"):
             return _search_by_keywords(_MANJU_KEYWORDS, page)
 
+        # 优先走官网搜索 API（真翻页）；失败/空结果再回退旧 loader
+        p = _search_api(key, page)
+        if p.get("searchList"):
+            rows = p["searchList"]
+            total = int(p.get("totalCount") or 0)
+            pagecount = int(p.get("totalPages") or 0)
+            return {
+                "page": page,
+                "pagecount": max(1, pagecount),
+                "limit": len(rows),
+                "total": total or len(rows),
+                "list": [_item(x) for x in rows],
+            }
         p = _search_loader(key)
         rows = p.get("searchList") or []
         total = int(p.get("totalCount") or len(rows) or 0)
