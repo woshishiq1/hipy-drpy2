@@ -1571,28 +1571,16 @@
             "api": "./py/兔岛影院.py"
         },
         {
-            "key": "创享影视",
-            "name": "🐂创享影视",
-            "type": 3,
-            "api": "./py/创享影视.py"
-        },
-        {
             "key": "搜剧AI",
             "name": "🔍搜剧AI",
             "type": 3,
-            "api": "./py/搜剧AI🍀TG @hshsjk9.py"
+            "api": "./py/搜剧AI.py"
         },
         {
             "key": "66大片网",
             "name": "💡66大片网",
             "type": 3,
-            "api": "./py/66大片网🍀TG @hshsjk9.py"
-        },
-        {
-            "key": "楓林網",
-            "name": "🍁楓林網",
-            "type": 3,
-            "api": "./py/楓林網🍀TG @hshsjk9.py"
+            "api": "./py/66大片网.py"
         },
         {
             "key": "草莓影视",
@@ -2150,12 +2138,12 @@
             "ext": {
                 "appName": "橘汁",
                 "publicKey": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCr8SzZhjYy+rsya1K09t8d2K50pWFoBkgUqMpKOiW+3IEVKd4eTdvg9RSOjQ82kypL6R9BnsmrS1V8s4PVDwjQbUtYhTPPC9Hz16qY7rpD6m0d2vr09/UpWQ5uOy9PR0QTrsioveZ+DIe9jc3C+zBCu/kZSY/R8stwJoiitki3gwIDAQAB",
-                "dataKey": "OW1WBLFZCLJ0WTNJQMRSZ2DYSGNBPT0=",
+                "dataKey": "ZU1DSFFWNENKMDYXVUQRN0ZJDUC4PQ==",
                 "dataIv": "OC1A06E197EF10CF3F6058CA7A803B5E",
-                "pkg": "com.mxj.wylcjbxyx",
+                "pkg": "com.asjdhjhd.mgd.p3",
                 "host": "",
                 "site": "https://123-1349250429.cos.ap-shanghai.myqcloud.com/app.txt",
-                "version": "3.0.2.4",
+                "version": "3.0.7.0",
                 "decrypt": "1"
             }
         },
