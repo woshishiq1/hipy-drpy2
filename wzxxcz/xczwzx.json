@@ -1151,13 +1151,13 @@
             "key": "草莓影视",
             "name": "🍓草莓影视",
             "type": 3,
-            "api": "./py/草莓影视🍀TG @hshsjk9.py"
+            "api": "./py/草莓影视.py"
         },
         {
             "key": "八戒影视1",
             "name": "🐷八戒影视1",
             "type": 3,
-            "api": "./py/八戒影视🍀TG @hshsjk9.py"
+            "api": "./py/八戒影视.py"
         },
         {
             "key": "qlys",
@@ -35434,19 +35434,7 @@
             "key": "巴士动漫",
             "name": "🚐巴士动漫",
             "type": 3,
-            "api": "csp_XBPQ",
-            "ext": {
-                "请求头": "User-Agent$MOBILE_UA#Accept$text/html#accept-language$zh-CN,zh;q=0.8",
-                "分类url": "https://dmbus.cc/show-{cateId}--{by}-{class}--{year}-{catePg}.html",
-                "分类": "国漫$1#日漫$2#欧美动漫$3#电影$4",
-                "数组": "class=\"item\">&&</li>",
-                "简介": "剧情：&&</p>",
-                "标题": "title=\"&&在线观看\"",
-                "副标题": "desc\">&&</span>",
-                "图片": "data-bg=\"&&\"",
-                "搜索url": "https://dmbus.cc/s----------.html?wd={wd}",
-                "倒序": "1"
-            }
+            "api": "csp_AnimeBashi"
         },
         {
             "key": "黑猫动漫",
@@ -35483,6 +35471,18 @@
             "name": "🍚米动漫",
             "type": 3,
             "api": "./py/米动漫.py"
+        },
+        {
+            "key": "吉里动漫",
+            "name": "🤣吉里动漫",
+            "type": 3,
+            "api": "csp_AnimeGiri"
+        },
+        {
+            "key": "花子动漫",
+            "name": "🌸花子动漫",
+            "type": 3,
+            "api": "csp_AnimeHuazi"
         },
         {
             "key": "红果短剧",

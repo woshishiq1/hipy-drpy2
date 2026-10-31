@@ -140,8 +140,12 @@ _RE_PIC = re.compile(
 _RE_DESC = re.compile(r'<p class="description">([\s\S]*?)</p>')
 _RE_META = re.compile(r'<p class="detail-meta">([\s\S]*?)</p>')
 _RE_SCORE = re.compile(r'<b>([\d.]+)</b>\s*分')
-_RE_DIRECTOR = re.compile(r'<span>导演：</span>([\s\S]*?)</p>')
-_RE_ACTOR = re.compile(r'<span>主演：</span>([\s\S]*?)</p>')
+_RE_ALIAS = re.compile(r'<p class="quartz-desc">([\s\S]*?)</p>')
+
+# 导演/主演: 每个名字是独立 <span>, 必须抓整段 p 再拆
+_RE_CAST_P = re.compile(r'<p class="cast[^"]*">([\s\S]*?)</p>')
+_RE_CAST_SPAN = re.compile(r'<span>([^<]*)</span>')
+_RE_CAST_TAG = re.compile(r'<span>(导演|主演)[：:]\s*</span>')
 
 # 播放目录: <div class="play-source"><h3>播放线路 1</h3><div class="episode-list"><a href="/pid/87095-1-1.html">HD中字</a>...</div>
 _RE_SOURCE = re.compile(
@@ -428,6 +432,7 @@ class Spider(Spider):
             pic = self._fix_url(m.group(1)) or self.default_pic
 
         # 元信息(评分/年份/地区/类型)
+        # 形如: <span><b>1.0</b> 分</span><span>2026</span><span>大陆</span><span>爱情,古装,剧情,国产</span>
         score, vyear, area, vclass = "", "", "", ""
         m = _RE_META.search(html)
         if m:
@@ -435,9 +440,31 @@ class Spider(Spider):
             ms = _RE_SCORE.search(meta_html)
             if ms:
                 score = ms.group(1)
-            spans = re.findall(r"<span>([^<]*)</span>", meta_html)
-            if len(spans) >= 4:
-                vyear, area, vclass = spans[1], spans[2], spans[3]
+            # 拆所有 span, 去掉内层标签; 用"年份"定位, 彻底避免评分位错位
+            spans = []
+            for raw in re.findall(r"<span>([\s\S]*?)</span>", meta_html):
+                t = self._clean(raw)
+                if t:
+                    spans.append(t)
+
+            idx = -1
+            for i, t in enumerate(spans):
+                if re.match(r"^(19|20)\d{2}$", t):
+                    idx = i
+                    break
+            if idx >= 0:
+                vyear = spans[idx]
+                if idx + 1 < len(spans):
+                    area = spans[idx + 1]
+                if idx + 2 < len(spans):
+                    vclass = spans[idx + 2]
+            else:
+                # 无年份(极少数未标注): 剔除评分位后按顺序补
+                rest = [x for x in spans if not x.endswith("分")]
+                if len(rest) >= 3:
+                    area, vclass = rest[1], rest[2]
+                elif len(rest) == 2:
+                    area = rest[1]
 
         # 简介
         content = ""
@@ -454,16 +481,45 @@ class Spider(Spider):
         else:
             content = INTRO_PREFIX
 
-        # 导演/主演
+        # 导演/主演: 逐个 <p class="cast"> 块, 拆出所有 <span> 名字
+        # 形如: <p class="cast cast-links"><span>主演：</span><span>谭松韵</span> <span>刘学义</span> ...
         director = ""
-        m = _RE_DIRECTOR.search(html)
-        if m:
-            director = self._clean(m.group(1))
-
         actor = ""
-        m = _RE_ACTOR.search(html)
+        for cm in _RE_CAST_P.finditer(html):
+            block = cm.group(1)
+            if "导演" in block[:60]:
+                tag = "director"
+            elif "主演" in block[:60]:
+                tag = "actor"
+            else:
+                tag = "actor" if director else "director"
+
+            names = []
+            for span_txt in _RE_CAST_SPAN.findall(block):
+                t = self._clean(span_txt)
+                if not t:
+                    continue
+                # 跳过标签本身 "导演：" / "主演：" / "导演:"
+                if re.fullmatch(r"(导演|主演)\s*[：:]?", t):
+                    continue
+                if t not in names:
+                    names.append(t)
+
+            if not names:
+                continue
+            joined = ", ".join(names)
+            if tag == "director" and not director:
+                director = joined
+            elif tag == "actor" and not actor:
+                actor = joined
+
+        # 别名(如 "兰香缘")
+        alias_name = ""
+        m = _RE_ALIAS.search(html)
         if m:
-            actor = re.sub(r"\s*,\s*", ", ", self._clean(m.group(1)))
+            alias_name = self._clean(m.group(1))
+            if alias_name and alias_name == name:
+                alias_name = ""
 
         # ===== 播放目录(多线路多剧集) =====
         groups = []          # [(line_title, [(ep_name, href), ...])]
@@ -488,7 +544,13 @@ class Spider(Spider):
             play_from.append(alias)
             play_url.append("#".join("%s$%s" % (n, h) for n, h in eps))
 
+        # 备注: 集数/更新状态 + 线路数
         remarks = []
+        if groups and len(groups[0][1]) > 1:
+            ep_cnt = len(groups[0][1])
+            remarks.append("全%d集" % ep_cnt)
+        elif groups and groups[0][1]:
+            remarks.append(groups[0][1][0][0])
         if score:
             remarks.append("%s分" % score)
         remarks.append("%d条线路" % len(groups))
@@ -496,6 +558,7 @@ class Spider(Spider):
         return {"list": [{
             "vod_id": vod_id,
             "vod_name": name,
+            "vod_sub": alias_name,
             "vod_pic": pic,
             "vod_content": content,
             "vod_actor": actor,
