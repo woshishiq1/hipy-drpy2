@@ -1976,6 +1976,12 @@
             "api": "./py/小鸡看看.py"
         },
         {
+            "key": "99影视TV",
+            "name": "🥂99影视TV",
+            "type": 3,
+            "api": "./py/99影视TV.py"
+        },
+        {
             "key": "爬虫影视",
             "name": "🐛爬虫影视",
             "type": 1,
@@ -2839,6 +2845,12 @@
                 "排序": "时间&人气&评分",
                 "排序值": "time&hits&score"
             }
+        },
+        {
+            "key": "巨量",
+            "name": "🍊巨量影视",
+            "type": 1,
+            "api": "https://api.juliang.live/api/provide/vod"
         },
         {
             "key": "飞娱影视",

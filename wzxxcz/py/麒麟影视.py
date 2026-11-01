@@ -684,18 +684,41 @@ class Spider(Spider):
             return final
 
         lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+        sub_url = None
         for i, line in enumerate(lines):
             if line.startswith("#EXT-X-STREAM-INF") and i + 1 < len(lines):
                 sub = lines[i + 1].strip()
                 if sub.startswith("#"):
                     continue
                 # 相对路径 -> 基于最终地址拼接
-                full = urllib.parse.urljoin(final, sub)
-                self.log("  master 子 m3u8: %s" % full[:160])
-                return full
+                sub_url = urllib.parse.urljoin(final, sub)
+                self.log("  master 子 m3u8: %s" % sub_url[:160])
+                break
 
-        self.log("  无子 m3u8, 返回最终地址")
-        return final
+        final_url = sub_url if sub_url else final
+
+        # HTTP/1.1 兼容处理: 部分播放内核对 HTTP/2 CDN (ffzy/dytt 等) 会转圈,
+        # 若同地址可用纯 http (强制 HTTP/1.1) 拉到 m3u8, 则优先返回 http 版
+        try:
+            if final_url.startswith("https://"):
+                http_url = "http://" + final_url[8:]
+                rsp3 = self.fetch(http_url, headers={
+                    "User-Agent": UA, "Accept": "*/*"}, timeout=10)
+                t3 = rsp3.text if hasattr(rsp3, "text") else ""
+                # 需确认未发生 301/302 跳回 https (跳回则降级无意义)
+                stayed_http = True
+                try:
+                    if hasattr(rsp3, "url") and rsp3.url:
+                        stayed_http = str(rsp3.url).startswith("http://")
+                except Exception:
+                    pass
+                if "#EXTM3U" in t3 and stayed_http:
+                    self.log("  http 可用, 降级为 HTTP/1.1 直链")
+                    final_url = http_url
+        except Exception:
+            pass
+
+        return final_url
 
     def _extract_real_url(self, html):
         """解析 player_aaaa JSON, 取真实 m3u8 地址 (encrypt=0)"""
