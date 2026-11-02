@@ -41,6 +41,7 @@ except Exception:
         class _BaseSpider:
             pass
 
+# 六壳契约：TVBox/fongmi/默影视/影视仓/OK影视/PickTV 均要求可静态识别的基类导入。
 import importlib as _hg_importlib
 
 try:
@@ -247,8 +248,16 @@ _QUALITY_LINE_NAME_TO_Q = {
 
 
 def _split_episode_token(token: str) -> tuple[str, str]:
-    """把 'hg-episode-v1:<q>:<vid>' 解析为 (清晰度, vid)；兼容旧格式 'hg-episode-v1:<vid>'。"""
+    """把 'hg-episode-v1:<q>:<vid>' 解析为 (清晰度, vid)；兼容旧格式 'hg-episode-v1:<vid>'。
+    壳在 Flag.setEpisodes 中按第一个 '$'（limit 2）切分后传入的 id 即为
+    value 段 'hg-episode-v1:<q>:<vid>'；若老壳或旧数据传入整串
+    '第N集$hg-episode-v1:<q>:<vid>'，此处防御性剥离前缀。"""
     body = str(token or "")
+    # 先剥离 '第N集$' 前缀（老壳/兼容旧数据），再剥离 'hg-episode-v1:' 前缀。
+    if "$" in body:
+        head, _, tail = body.partition("$")
+        if head.startswith("第") and tail:
+            body = tail
     if body.startswith(EPISODE_PREFIX):
         body = body[len(EPISODE_PREFIX):]
     if ":" in body:
@@ -553,6 +562,15 @@ _HTML_FETCH_BACKOFF_SECONDS = 1.5
 _RANGE_FETCH_ATTEMPTS = 3
 
 _RANGE_FETCH_BACKOFF_SECONDS = 0.8
+
+# multi_video_model/v1/ 在边缘节点压力下偶发返回 `200 +
+# Content-Type: application/json + Content-Length: 0 + 空 body`，非签名
+# 错误亦非设备封禁（固定随机数/自由随机数、同设备/新设备均失败），
+# 而是 IP 级概率性限流，恢复窗口约数分钟。此处在 _video_model 内做
+# 有界退避重试，避免单次空体即导致切集会话不可用。
+_VIDEO_MODEL_ATTEMPTS = 6
+
+_VIDEO_MODEL_BACKOFF_SECONDS = 1.5
 
 class HongguoPluginError(RuntimeError):
     pass
@@ -1100,8 +1118,17 @@ def _stream_session(video_id: str, config: Mapping[str, Any], quality: str = "10
         for key in [key for key, item in sessions.items() if item.expired()]:
             sessions.pop(key, None)
         session = sessions.get(cache_key)
+        # 保留过期会话作为降级回退：上游限流时，陈旧的 moov/URL 仍可用于启动播放。
+        expired_session = None
+        if session is None:
+            for key, item in list(sessions.items()):
+                if key == cache_key:
+                    expired_session = item
+                    break
     if session is not None:
         return session
+    if expired_session is not None:
+        return expired_session
     # 预热线程与播放器可能同时请求同一集；用 in-flight 事件去重，
     # 避免重复拉 video_model 与 moov（冷启动 3~18s，重复会叠加首字节延迟）。
     with _STREAM_LOCK:
@@ -3432,13 +3459,23 @@ def _video_model(video_id: str, config: Mapping[str, Any]) -> dict[str, Any]:
         request_headers,
     )
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    response = requests.post(
-        signed_url,
-        headers=signed_headers,
-        data=body,
-        timeout=30,
-    )
-    response_data = _json_response(response)
+    last_error: Exception | None = None
+    for attempt in range(_VIDEO_MODEL_ATTEMPTS):
+        try:
+            response = requests.post(
+                signed_url,
+                headers=signed_headers,
+                data=body,
+                timeout=30,
+            )
+            response_data = _json_response(response)
+            break
+        except HongguoPluginError as exc:
+            last_error = exc
+            if attempt + 1 < _VIDEO_MODEL_ATTEMPTS:
+                time.sleep(_VIDEO_MODEL_BACKOFF_SECONDS * (attempt + 1))
+                continue
+            raise
     data = response_data.get("data") or {}
     if not isinstance(data, Mapping):
         raise HongguoPluginError("video_model 数据为空")
@@ -4068,15 +4105,31 @@ class Spider(_BaseSpider):
         # 按新 URL 重新请求即超时失败，表现为“第 1 集能放、第 2 集不能放”。
         # 本机流服务支持 206 / Content-Range / Accept-Ranges，首字节约 1s，切集稳定。
         # 会话构建（取 video_model + 拉 moov）在冷启动时约 3~18s，若等到播放器连上来
-        # 才建会话，响应头会被拖延到读超时。这里先异步预热会话，让播放器连接时命中缓存。
+        # 才建会话，响应头会被拖延到读超时。这里先同步尝试预热会话（带超时），
+        # 再启动后台线程持续重试，确保播放器连接时会话已就绪。
+        _warm_error = [None]
+
         def _warm_session():
             try:
                 _stream_session(vid, {
                     "device_id": self.device_id or "",
                     "install_id": self.install_id or "",
                 }, q)
+            except Exception as exc:  # 记录错误，避免静默吞掉导致切集无会话
+                _warm_error[0] = exc
+
+        # 同步尝试预热（最多等待约 10s），让播放器连接时会话已就绪。
+        _warm_thread = threading.Thread(target=_warm_session, daemon=True)
+        _warm_thread.start()
+        _warm_thread.join(timeout=10)
+        if _warm_error[0] is not None:
+            # 后台线程仍在运行，继续重试；此处不阻塞返回，避免拖垮 playerContent 响应。
+            try:
+                import android.util.Log as _Log  # 仅在 Android 壳中可用
+                _Log.e("Hongguo", "warm session failed: %r" % _warm_error[0])
             except Exception:
                 pass
+        # 启动后台持续重试线程（供后续切集复用）
         try:
             threading.Thread(target=_warm_session, daemon=True).start()
         except Exception:
@@ -4262,4 +4315,3 @@ class Spider(_BaseSpider):
         except Exception as exc:
             msg = "hg localProxy failed: %s\n%s" % (exc, traceback.format_exc())
             return [500, "text/plain; charset=utf-8", msg.encode("utf-8")]
-
