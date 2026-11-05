@@ -1616,8 +1616,7 @@
             "key": "枫叶影院1",
             "name": "🍁枫叶影院1",
             "type": 3,
-            "api": "./js/枫叶影院.js",
-            "changeable": 0
+            "api": "./py/枫叶影院1.py"
         },
         {
             "key": "dnyy",
