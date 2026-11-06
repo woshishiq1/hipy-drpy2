@@ -938,7 +938,13 @@
             "key": "荐片",
             "name": "🐭荐片P2P",
             "api": "csp_JianPian",
-            "type": 3
+            "type": 3,
+            "ext": {
+                "site": [
+                    "https://www.whhyn.com",
+                    "https://www.zxfmj.com"
+                ]
+            }
         },
         {
             "key": "荐片123",
@@ -1055,6 +1061,15 @@
             "quickSearch": 1,
             "filterable": 1,
             "ext": "https://xunlei8.me"
+        },
+        {
+            "key": "电影港",
+            "name": "🍊电影港磁力",
+            "type": 3,
+            "api": "csp_DianYingG",
+            "searchable": 1,
+            "quickSearch": 1,
+            "filterable": 1
         },
         {
             "key": "py_xiongdi",
@@ -1623,12 +1638,6 @@
             "name": "💡多瑙影院",
             "type": 3,
             "api": "./py/多瑙影院.py"
-        },
-        {
-            "key": "ayf",
-            "name": "💡爱壹帆影视",
-            "type": 3,
-            "api": "./py/爱壹帆.py"
         },
         {
             "key": "nmvm",
@@ -2331,6 +2340,16 @@
             "ext": {
                 "url": "http://v.rbotv.cn"
             }
+        },
+        {
+            "key": "快映fox",
+            "name": "快映影视",
+            "type": 3,
+            "api": "csp_AppFox",
+            "searchable": 1,
+            "quickSearch": 1,
+            "filterable": 0,
+            "ext": "./json/ky4kbgq7b273.json"
         },
         {
             "key": "酷客影视1",
@@ -35867,6 +35886,12 @@
             "type": 3,
             "api": "./js/drpy2.min.js",
             "ext": "./js/Anime1.js"
+        },
+        {
+            "key": "稀饭",
+            "name": "🍚稀饭动漫",
+            "type": 3,
+            "api": "csp_AnimeXifan"
         },
         {
             "key": "巴士动漫",
