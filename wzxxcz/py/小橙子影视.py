@@ -1,5 +1,13 @@
 # coding = utf-8
 #!/usr/bin/python
+"""
+瓜子影视 apinew.uozvr.com | TVBox Python 爬虫 (加密API版)
+关键:
+  - AES-128-CBC 加解密请求/响应体 (固定 key/iv)
+  - RSA PKCS1_v1_5 加解密会话密钥 (keys 字段)
+  - MD5 签名 (token + request_key + time + keys + 固定盐)
+  - 多域名自动轮换 + 设备注册/登录/刷新 token
+"""
 import re
 import sys
 import json
@@ -16,6 +24,8 @@ from Crypto.Cipher import PKCS1_v1_5
 from base.spider import Spider
 
 sys.path.append('..')
+
+INTRO_PREFIX = "🍊小橙子为您介绍剧情👉请不要相信视频中的广告，以免上当受骗！"
 
 class Spider(Spider):
     def __init__(self):
@@ -387,7 +397,7 @@ t5lYKfpe8k83ZA==
                 "vod_area": vod.get('vod_area', ''),
                 "vod_actor": vod.get('vod_actor', ''),
                 "vod_director": vod.get('vod_director', ''),
-                "vod_content": vod.get('vod_use_content', '').strip(),
+                "vod_content": INTRO_PREFIX + "\n" + vod.get('vod_use_content', '').strip(),
                 "vod_play_from": "",
                 "vod_play_url": ""
             }
