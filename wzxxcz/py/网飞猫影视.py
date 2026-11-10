@@ -104,12 +104,12 @@ for c in CLASSES:
 # ===================== 正则 =====================
 _RE_CARD = re.compile(
     r'<a[^>]*class="stui-vodlist__thumb[^"]*"[^>]*href="(/uty/\d+\.html)"[^>]*title="([^"]*)"[^>]*>'
-    r'[\s\S]{0,400}?<mip-img[^>]*?src="([^"]*)"'
-    r'[\s\S]{0,200}?<span[^>]*class="pic-text[^"]*"[^>]*>([^<]*)</span>',
+    r'[\s\S]{0,2000}?<mip-img[^>]*?src="([^"]*)"'
+    r'[\s\S]{0,2000}?<span[^>]*class="pic-text[^"]*"[^>]*>([^<]*)</span>',
     re.S | re.I)
 
 _RE_CARD_ULT = re.compile(
-    r'href="(/uty/\d+\.html)"[^>]*title="([^"]*)"[\s\S]{0,500}?<mip-img[^>]*?src="([^"]*)"',
+    r'href="(/uty/\d+\.html)"[^>]*title="([^"]*)"[\s\S]{0,2000}?<mip-img[^>]*?src="([^"]*)"',
     re.S | re.I)
 
 _RE_CARD_MIN = re.compile(
@@ -124,7 +124,6 @@ _RE_TITLE_H1 = re.compile(r'<h3[^>]*class="title"[^>]*>([\s\S]*?)</h3>', re.I)
 _RE_DESC_DIV = re.compile(r'<div[^>]*class="stui-content__desc"[^>]*>([\s\S]*?)</div>', re.I)
 _RE_PIC = re.compile(r'<mip-img[^>]*?src="([^"]+)"', re.I)
 
-# 提取年份、地区、类型信息
 _RE_YEAR = re.compile(r'年份：</span>\s*(\d+)', re.I)
 _RE_AREA = re.compile(r'地区：</span>([^<]+)', re.I)
 _RE_TYPE = re.compile(r'类型：</span>([^<]+)', re.I)
@@ -138,6 +137,10 @@ _RE_IFRAME_URL = re.compile(r'<mip-iframe[^>]*?src="([^"]+)"', re.I)
 _RE_URL_PARAM = re.compile(r'[?&]url=([^&"\']+)', re.I)
 
 _RE_LIMIT = re.compile(r'搜索限制为\s*\d+\s*秒一次', re.I)
+
+# 吸收的黑科技：JS 盾识别
+_RE_IDC = re.compile(r'document\.cookie="(idc_search_browser)=([0-9a-fA-F]+)', re.I)
+_RE_IDC_PAGE = re.compile(r'idc_search_browser|正在验证浏览器', re.I)
 
 
 class Spider(Spider):
@@ -161,27 +164,44 @@ class Spider(Spider):
         self.default_pic = DEFAULT_PIC
         self._play_cache = {}
         self._last_search = 0.0
+        self._idc = ""          # 破解 JS 盾专用的 Cookie
+        self._idc_ts = 0.0
         self.log("init: site=%s" % self.site_url)
 
     # ---------- 基础 ----------
-    def _fetch(self, url, timeout=20, headers=None, allow_redirects=True):
+    def _raw(self, url, timeout=20, headers=None):
+        h = dict(self.headers)
+        if headers:
+            h.update(headers)
         try:
-            h = dict(self.headers)
-            if headers:
-                h.update(headers)
-            rsp = self.fetch(url, headers=h, timeout=timeout,
-                             allow_redirects=allow_redirects)
-            text = ""
-            if hasattr(rsp, "text"):
-                text = rsp.text or ""
-            elif hasattr(rsp, "content"):
-                text = rsp.content.decode("utf-8", "ignore")
-            else:
-                text = str(rsp)
-            return text
+            rsp = self.fetch(url, headers=h, timeout=timeout)
+            return getattr(rsp, "text", str(rsp))
         except Exception as e:
             self.log("fetch FAIL %s -> %s" % (url, e))
             return ""
+
+    def _fetch(self, url, timeout=20, headers=None):
+        text = self._raw(url, timeout, headers)
+        # 核心破解：识别到 JS 盾后，自动提取 Cookie 并带 _idc_pass 重新请求
+        if text and len(text) < 2000 and _RE_IDC_PAGE.search(text):
+            self.log("  ⚠️ 命中 JS 验证拦截，开始破除...")
+            for _ in range(2):
+                if not self._idc:
+                    h = self._raw(self.site_url + "/search.php?searchtype=5&tid=1&page=1")
+                    m = _RE_IDC.search(h)
+                    if m: self._idc = "%s=%s" % (m.group(1), m.group(2))
+                
+                if not self._idc: break
+                
+                h2 = dict(headers or {})
+                h2["Cookie"] = self._idc
+                retry_url = url + ("&" if "?" in url else "?") + "_idc_pass=" + str(int(time.time()*1000))
+                text2 = self._raw(retry_url, timeout, h2)
+                if not (text2 and len(text2) < 2000 and _RE_IDC_PAGE.search(text2)):
+                    return text2
+                self._idc = ""  # Cookie 过期，清空重试
+            return ""
+        return text
 
     def _fix_url(self, url):
         if not url:
@@ -207,7 +227,7 @@ class Spider(Spider):
         s = re.sub(r"@[^@\s]{0,30}@", "", s)
         s = re.sub(r"[ \t\r\f\v]+", " ", s)
         s = re.sub(r"\n{2,}", "\n", s)
-        s = re.sub(r'\.\.$', '', s.strip()) # 去掉结尾的多余小点
+        s = re.sub(r'\.\.$', '', s.strip())
         return s.strip()
 
     # ---------- 列表解析 ----------
@@ -217,6 +237,7 @@ class Spider(Spider):
         if not html:
             return videos
 
+        # 完全沿用你的结构，只加了下标提取
         for m in _RE_CARD.finditer(html):
             href, title, pic, remark = m.group(1), m.group(2), m.group(3), m.group(4)
             if href in seen: continue
@@ -275,7 +296,6 @@ class Spider(Spider):
 
     def homeVideoContent(self):
         html = self._fetch(self.site_url + "/")
-        self.log("home HTML len=%d" % len(html))
         return {"list": self._extract_videos(html)}
 
     def categoryContent(self, tid, pg, filter, extend):
@@ -287,43 +307,26 @@ class Spider(Spider):
                 extend = {}
         extend = extend or {}
 
-        static_url = "%s/all/%s.html" % (self.site_url, tid)
-        if page > 1:
-            static_url = "%s/all/%s-%d.html" % (self.site_url, tid, page)
-            
-        self.log("category (static): %s" % static_url)
-        html = self._fetch(static_url)
-        videos = self._extract_videos(html)
+        req_tid = extend.get("tid") or tid
         
-        if not videos:
-            self.log("  static empty, trying search.php fallback...")
-            real_tid = extend.get("tid") or tid
-            if real_tid == "2": real_tid = "13"
-            elif real_tid == "1": real_tid = "5"
-            elif real_tid == "3": real_tid = "30"
-            elif real_tid == "4": real_tid = "34"
+        params = {
+            "searchtype": "5",
+            "tid": req_tid,
+            "page": page
+        }
+        if extend.get("area"): params["area"] = extend["area"]
+        if extend.get("year"): params["year"] = extend["year"]
+        if extend.get("order"): params["order"] = extend["order"]
 
-            params = {
-                "searchtype": "5",
-                "tid": real_tid,
-                "page": page,
-                "year": extend.get("year") or "2026"
-            }
-            if extend.get("area"): params["area"] = extend["area"]
-            if extend.get("order"): params["order"] = extend["order"]
-            
-            search_url = "%s/search.php?%s" % (self.site_url, urllib.parse.urlencode(params))
-            self.log("category (search): %s" % search_url)
-            html2 = self._fetch(search_url)
-            
-            if _RE_LIMIT.search(html2):
-                self.log("  命中限流提示页")
-                return {"list": [], "page": page, "pagecount": 1, "limit": 24, "total": 0}
-                
-            videos = self._extract_videos(html2)
-            if videos:
-                html = html2
+        url = "%s/search.php?%s" % (self.site_url, urllib.parse.urlencode(params))
+        self.log("category: %s" % url)
+        html = self._fetch(url)
 
+        if _RE_LIMIT.search(html):
+            self.log("  命中限流提示页")
+            return {"list": [], "page": page, "pagecount": 1, "limit": 24, "total": 0}
+
+        videos = self._extract_videos(html)
         pagecount = self._page_count(html)
         self.log("  videos=%d pagecount=%d" % (len(videos), pagecount))
 
@@ -368,7 +371,6 @@ class Spider(Spider):
         html = self._fetch(url)
         if not html: return {"list": []}
 
-        # 1. 优先用 OG 标签
         og = {}
         for m in _RE_OG.finditer(html):
             og[m.group(1).lower()] = self._clean(m.group(2))
@@ -385,11 +387,9 @@ class Spider(Spider):
             if m: pic = m.group(1)
         pic = self._fix_url(pic) or self.default_pic
 
-        # 2. 导演/演员/分类/地区 直接从 og 拿
         director = og.get("video:director", "")
         actor = og.get("video:actor", "")
         
-        # 3. 年份、类型、地区：用正则强抓（优先正则，兜底 OG）
         vclass = ""
         m_type = _RE_TYPE.search(html)
         if m_type: vclass = m_type.group(1)
@@ -404,7 +404,6 @@ class Spider(Spider):
         m_year = _RE_YEAR.search(html)
         if m_year: vyear = m_year.group(1)
 
-        # 4. 简介
         content = ""
         m = _RE_DESC_DIV.search(html)
         if m: content = self._clean(m.group(1))
@@ -414,11 +413,9 @@ class Spider(Spider):
             if m: content = self._clean(m.group(1))
         content = (INTRO_PREFIX + "\n" + content) if content else INTRO_PREFIX
 
-        # 5. 剧集与线路
         play_from, play_url = self._parse_playlists(html)
         remarks = "%d条线路" % len(play_from) if play_from else ""
 
-        # 组装并塞入年份、地区、类型
         return {"list": [{
             "vod_id": vod_id,
             "vod_name": name,
@@ -428,7 +425,7 @@ class Spider(Spider):
             "vod_director": director,
             "vod_area": varea,
             "vod_year": vyear,
-            "vod_type": vclass,  # <--- 类型完美补全
+            "vod_type": vclass,
             "vod_remarks": remarks,
             "vod_play_from": "$$$".join(play_from),
             "vod_play_url": "$$$".join(play_url),

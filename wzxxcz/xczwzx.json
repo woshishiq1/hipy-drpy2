@@ -1124,7 +1124,7 @@
             "key": "网飞猫影视",
             "name": "🐈网飞猫影视",
             "type": 3,
-            "api": "./py/网飞猫影视(关梯).py"
+            "api": "./py/网飞猫影视.py"
         },
         {
             "key": "ZIP0影视",
@@ -1137,12 +1137,6 @@
             "name": "🍗饭搭子影视",
             "type": 3,
             "api": "./py/饭搭子影视.py"
-        },
-        {
-            "key": "10",
-            "name": "🍊T4影视",
-            "type": 4,
-            "api": "https://banyeomni.780420.xyz:17777/api/tvbox/source/2097848348508688384?token=banye666"
         },
         {
             "key": "1234影视",
@@ -35300,6 +35294,12 @@
             "type": 3,
             "api": "./js/drpy2.min.js",
             "ext": "./js/Anime1.js"
+        },
+        {
+            "key": "赏月",
+            "name": "🌙赏月动漫",
+            "type": 3,
+            "api": "csp_AnimeTsukimi"
         },
         {
             "key": "稀饭",

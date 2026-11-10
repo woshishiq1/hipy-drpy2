@@ -1574,23 +1574,16 @@
             "api": "./py/饭搭子影视.py"
         },
         {
-            "key": "10",
-            "name": "🍊T4影视",
-            "type": 4,
-            "api": "https://banyeomni.780420.xyz:17777/api/tvbox/source/2097848348508688384?token=banye666"
-        },
-        {
             "key": "1234影视",
             "name": "🍊1234影视",
             "type": 3,
             "api": "./py/1234影视.py"
         },
         {
-            "key": "爱剧影视",
-            "name": "🍊爱剧影视",
+            "key": "爱剧网",
+            "name": "🍊爱剧网",
             "type": 3,
-            "api": "./py/爱剧影视.py",
-            "ext": "http://43.248.117.123:4680"
+            "api": "./py/爱剧网.py"
         },
         {
             "key": "4K电影网",
@@ -35735,6 +35728,12 @@
             "type": 3,
             "api": "./js/drpy2.min.js",
             "ext": "./js/Anime1.js"
+        },
+        {
+            "key": "赏月",
+            "name": "🌙赏月动漫",
+            "type": 3,
+            "api": "csp_AnimeTsukimi"
         },
         {
             "key": "稀饭",

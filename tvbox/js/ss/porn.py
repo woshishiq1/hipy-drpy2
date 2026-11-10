@@ -13,9 +13,33 @@ try:
     from lxml import etree
 except ImportError:
     etree = None
-
-
-class Spider:
+# 六壳契约：TVBox / fongmi / 默影视 / 影视仓 / OK影视 / PickTV 均要求可静态识别的基类导入
+try:
+    from base.spider import Spider as _BaseSpider
+except Exception:
+    try:
+        import sys as _sys
+        _sys.path.append("..")
+        from base.spider import Spider as _BaseSpider
+    except Exception:
+        try:
+            import importlib as _importlib
+            _BaseSpider = _importlib.import_module("base.spider").Spider
+        except Exception:
+            class _BaseSpider:
+                def __init__(self):
+                    self.extend = ""
+                def fetch(self, url, params=None, cookies=None, headers=None, timeout=5, verify=True, stream=False, allow_redirects=True):
+                    if requests is None:
+                        raise RuntimeError("requests unavailable")
+                    return requests.get(url, params=params, cookies=cookies, headers=headers, timeout=timeout, verify=verify, stream=stream, allow_redirects=allow_redirects)
+                def post(self, url, params=None, data=None, json=None, cookies=None, headers=None, timeout=5, verify=True, stream=False, allow_redirects=True):
+                    if requests is None:
+                        raise RuntimeError("requests unavailable")
+                    return requests.post(url, params=params, data=data, json=json, cookies=cookies, headers=headers, timeout=timeout, verify=verify, stream=stream, allow_redirects=allow_redirects)
+                def getProxyUrl(self, local=True):
+                    return "http://127.0.0.1:9978/proxy?do=py"
+class Spider(_BaseSpider):
     HOSTS = [
         "https://rou.video",
         "https://rouvb1.xyz",
@@ -25,8 +49,14 @@ class Spider:
     PUB_PAGE_URL = "https://rdz3.xyz/dizhi"
 
     def __init__(self):
+        try:
+            _BaseSpider.__init__(self)
+        except Exception:
+            self.extend = ""
         self._current_host_idx = 0
         self._fetched_pub_hosts = False
+        self._destroyed = False
+        self._timeout = 20
         self.host = self.HOSTS[0]
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -72,6 +102,8 @@ class Spider:
         return cfg
 
     def init(self, extend=""):
+        self.extend = extend
+        self._destroyed = False
         cfg = self._ext_cfg(extend)
         site = str(cfg.get("site", "") or "").strip().rstrip("/")
         if site.startswith("http"):
@@ -149,6 +181,8 @@ class Spider:
         return u
 
     def _get(self, url, headers=None):
+        if getattr(self, "_destroyed", False):
+            return ""
         headers = headers or dict(self.headers)
         timeout = self._timeout_value()
         try:
@@ -157,11 +191,18 @@ class Spider:
                 r.encoding = "utf-8"
                 if r.status_code == 200 and r.text:
                     return r.text
-            if requests is not None:
-                r = requests.get(url, headers=headers, timeout=timeout, verify=False)
-                r.encoding = "utf-8"
-                if r.status_code == 200 and r.text:
-                    return r.text
+        except Exception:
+            pass
+        try:
+            r = self.fetch(url, headers=headers, timeout=timeout, verify=False)
+            if r is not None and getattr(r, "status_code", 0) == 200:
+                try:
+                    r.encoding = "utf-8"
+                except Exception:
+                    pass
+                text = r.text
+                if text:
+                    return text
         except Exception:
             pass
         try:
@@ -179,6 +220,8 @@ class Spider:
             return ""
 
     def _get_bytes(self, url, headers=None):
+        if getattr(self, "_destroyed", False):
+            return b""
         headers = headers or dict(self.headers)
         timeout = self._timeout_value()
         try:
@@ -186,10 +229,14 @@ class Spider:
                 r = self.s.get(url, headers=headers, timeout=timeout)
                 if r.status_code == 200 and r.content:
                     return r.content
-            if requests is not None:
-                r = requests.get(url, headers=headers, timeout=timeout, verify=False)
-                if r.status_code == 200 and r.content:
-                    return r.content
+        except Exception:
+            pass
+        try:
+            r = self.fetch(url, headers=headers, timeout=timeout, verify=False)
+            if r is not None and getattr(r, "status_code", 0) == 200:
+                content = getattr(r, "content", b"")
+                if content:
+                    return content
         except Exception:
             pass
         return b""
@@ -382,15 +429,28 @@ class Spider:
             pass
         return out
 
-    def _parse_video_list(self, html, page="1"):
-        videos = self._extract_tsr_videos(html)
-        if not videos:
-            videos = self._parse_dom_list(html)
+    def _parse_pagecount(self, html, page="1"):
         try:
             p_num = int(str(page)) if str(page).isdigit() else 1
         except Exception:
             p_num = 1
-        return {"page": p_num, "pagecount": p_num + 1 if videos else p_num, "limit": 20, "total": 9999, "list": videos}
+        max_page = p_num
+        if html:
+            for m in re.finditer(r'[?&](?:amp;)?page=(\d+)', html):
+                try:
+                    n = int(m.group(1))
+                    if n > max_page:
+                        max_page = n
+                except Exception:
+                    continue
+        return p_num, (max_page if max_page > p_num else p_num)
+
+    def _parse_video_list(self, html, page="1"):
+        videos = self._extract_tsr_videos(html)
+        if not videos:
+            videos = self._parse_dom_list(html)
+        p_num, pagecount = self._parse_pagecount(html, page)
+        return {"page": p_num, "pagecount": pagecount, "limit": len(videos) or 20, "list": videos}
 
     def _norm_extend(self, extend):
         if isinstance(extend, str):
@@ -441,7 +501,7 @@ class Spider:
             "日本": [order_filter],
             "全部视频": [order_filter],
         }
-        return {"class": classes, "filters": filters}
+        return {"class": classes, "filters": filters, "list": []}
 
     def homeVideoContent(self):
         try:
@@ -451,7 +511,9 @@ class Spider:
 
     def categoryContent(self, tid, pg=1, filter=None, extend=None):
         extend = self._norm_extend(extend)
-        page = str(pg or "1")
+        page = str(pg or "1").strip()
+        if not page.isdigit():
+            page = "1"
         order = self._order_value(extend)
         tid = str(tid or "").strip()
         if tid.startswith("cat_tag:"):
@@ -484,11 +546,13 @@ class Spider:
         return {"page": 1, "pagecount": 1, "limit": len(tag_items), "total": len(tag_items), "list": tag_items}
 
     def searchContent(self, key, quick=False, pg="1"):
-        try:
-            page = str(pg or "1")
-        except Exception:
+        page = str(pg or "1").strip()
+        if not page.isdigit():
             page = "1"
-        return self._parse_video_list(self._req("/search?q=%s&t=&sort=&page=%s" % (quote(str(key or "")), page)), page)
+        html = self._req("/search?q=%s&t=&sort=&page=%s" % (quote(str(key or "")), page))
+        if not html:
+            return {"page": int(page), "pagecount": int(page), "limit": 0, "list": []}
+        return self._parse_video_list(html, page)
 
     def detailContent(self, ids):
         if isinstance(ids, (list, tuple)):
@@ -498,7 +562,7 @@ class Spider:
         clean_id = re.sub(r"^https?://[^/]+/v/", "", vid).replace("/v/", "").strip().strip("/")
         html = self._req("/v/%s" % clean_id)
         if not html:
-            return {"list": []}
+            return {"list": [], "msg": "详情页获取失败：%s" % clean_id}
         vod_name = clean_id
         m = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S)
         if m:
@@ -609,11 +673,27 @@ class Spider:
 
     def _proxy_url(self, vid, target):
         try:
-            from com.github.catvod import Proxy
-            base = Proxy.getUrl(True)
-            return "%s?do=py&type=rou_hls&vid=%s&url=%s" % (base, quote(vid), quote(target, safe=""))
+            base = self.getProxyUrl(True)
         except Exception:
-            return "http://127.0.0.1:9978/proxy?do=py&type=rou_hls&vid=%s&url=%s" % (quote(vid), quote(target, safe=""))
+            base = ""
+        if not base:
+            try:
+                from com.github.catvod import Proxy
+                base = Proxy.getUrl(True)
+            except Exception:
+                base = "http://127.0.0.1:9978/proxy"
+        try:
+            import urllib.parse as _up
+            parts = _up.urlsplit(str(base))
+            query = dict(_up.parse_qsl(parts.query, keep_blank_values=True))
+            query["do"] = "py"
+            base = _up.urlunsplit((parts.scheme, parts.netloc, parts.path, _up.urlencode(query), parts.fragment))
+        except Exception:
+            sep = "&" if "?" in base else "?"
+            if "do=" not in base:
+                base = base + sep + "do=py"
+        sep = "&" if "?" in base else "?"
+        return "%s%stype=rou_hls&vid=%s&url=%s" % (base, sep, quote(str(vid or ""), safe=""), quote(str(target or ""), safe=""))
 
     def playerContent(self, flag, id, vipFlags=None):
         if isinstance(id, (list, tuple)):
@@ -654,25 +734,48 @@ class Spider:
         if isinstance(param, str):
             try:
                 import urllib.parse as _up
-                qs = dict(_up.parse_qsl(_up.urlsplit(param).query)) if param.startswith("http") else json.loads(param)
-                param = qs
+                text = param.strip()
+                if text.startswith("http"):
+                    param = dict(_up.parse_qsl(_up.urlsplit(text).query))
+                elif text.startswith("{"):
+                    param = json.loads(text)
+                else:
+                    param = dict(_up.parse_qsl(text))
             except Exception:
                 param = {}
         if not isinstance(param, dict):
             param = {}
         try:
             ptype = str(param.get("type", ""))
-            if ptype == "rou_hls" and param.get("url"):
+            target = str(param.get("url", "") or "")
+            if ptype in ("rou_hls", "m3u8", "ts", "mp4", "py", "proxy") and target:
                 import urllib.parse as _up
-                target = _up.unquote(str(param.get("url")))
-                vid = str(param.get("vid", ""))
+                vid = str(param.get("vid", "") or "")
+                try:
+                    raw_parts = _up.urlsplit(target)
+                    inner = dict(_up.parse_qsl(raw_parts.query, keep_blank_values=True))
+                    if inner.get("url") and ("/proxy" in raw_parts.path or "127.0.0.1" in raw_parts.netloc):
+                        target = inner["url"]
+                        if not vid:
+                            vid = str(inner.get("vid", "") or "")
+                except Exception:
+                    target = _up.unquote(target)
+                vid = str(param.get("vid", "") or vid or "")
+                if not vid:
+                    m = re.search(r"/(?:api/)?hls/([A-Za-z0-9_-]+)", target)
+                    if m:
+                        vid = m.group(1)
+                if target.startswith("//"): 
+                    target = "https:" + target
                 if target.startswith("/"):
                     target = self.HOST + target
+                if not target.lower().startswith("http"):
+                    return [404, "text/plain", b"Not Found", {}]
                 if "/api/hls/" in target and "?" not in target and ".png" not in target:
                     raw = self._get_bytes(target, headers={"User-Agent": self.headers["User-Agent"], "Referer": self.HOST + "/"})
                     m3u8 = self._png_extract_m3u8(raw)
                     if "#EXTM3U" not in m3u8:
-                        return [500, "text/plain", b"empty m3u8", {}]
+                        return [404, "text/plain", b"Not Found", {}]
                     lines = []
                     for line in m3u8.splitlines():
                         s = line.strip()
@@ -685,8 +788,12 @@ class Spider:
                     body = "\n".join(lines).encode("utf-8")
                     return [200, "application/vnd.apple.mpegurl", body, {"Access-Control-Allow-Origin": "*"}]
                 raw = self._get_bytes(target, headers={"User-Agent": self.headers["User-Agent"], "Referer": self.HOST + "/"})
+                if not raw:
+                    return [404, "text/plain", b"Not Found", {}]
                 mp4 = self._png_extract_mp4(raw)
                 if not mp4:
+                    if b"#EXTM3U" in raw:
+                        return [200, "application/vnd.apple.mpegurl", raw, {"Access-Control-Allow-Origin": "*"}]
                     return [404, "text/plain", b"Not Found", {}]
                 return [200, "video/mp2t", mp4, {"Access-Control-Allow-Origin": "*"}]
         except Exception:
@@ -697,18 +804,28 @@ class Spider:
         if not url:
             return False
         u = str(url).lower()
-        return ".m3u8" in u or ".mp4" in u or ".flv" in u or ".ts" in u
+        return ".m3u8" in u or ".mp4" in u or ".flv" in u or ".ts" in u or ".mkv" in u or ".webm" in u or "type=rou_hls" in u
 
     def manualVideoCheck(self):
         return False
 
-    def action(self, action):
+    def liveContent(self, url=""):
+        return {"list": []}
+
+    def action(self, action=""):
         return {}
 
+    def proxy(self, param=None):
+        return self.localProxy(param)
+
     def destroy(self):
+        self._destroyed = True
         try:
             if self.s is not None:
                 self.s.close()
         except Exception:
             pass
+        self.s = None
+        self.session = None
+        self.sess = None
         return None
