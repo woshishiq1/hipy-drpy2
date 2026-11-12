@@ -12,14 +12,10 @@ https://github.catvod.com/https://raw.githubusercontent.com/tushen6/Tomorrow/mas
 
 ## ⚙️GitHub镜像加速站 
 - https://gh-proxy.com/
-- https://github.catvod.com/      
-- https://gh.xxooo.cf/
-- https://gh.llkk.cc/
+- https://github.catvod.com/
+- https://ghproxylist.com/
+- https://gh.ddlc.top/
 - https://github.ednovas.xyz/
-- https://ghproxy.net/
-- https://gh.aptv.app/
-- https://gitpr.xmcom.us.kg/
-- https://ghproxy.cn/
 
 ## ✨热门(TVBox、影视仓、OK影视)配置接口
 - （1）网络接口 ： `https://8815.kstore.vip/tvbox/wmz`

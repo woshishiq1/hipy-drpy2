@@ -1589,24 +1589,19 @@
             "key": "4K电影网",
             "name": "🍊4K电影网",
             "type": 3,
-            "api": "./py/4K电影网.py",
-            "searchable": 1,
-            "changeable": 1,
-            "quickSearch": 1,
-            "filterable": 1,
-            "playerType": 2
+            "api": "./py/4K电影网.py"
         },
         {
-            "key": "追剧达人",
-            "name": "🍊追剧达人",
+            "key": "暮色影院",
+            "name": "🍊暮色影院",
             "type": 3,
-            "api": "./py/追剧达人.py"
+            "api": "./py/暮色影院.py"
         },
         {
             "key": "未来影院",
             "name": "🍊未来影院",
             "type": 3,
-            "api": "./py/未来影院(关梯).py"
+            "api": "./py/未来影院.py"
         },
         {
             "key": "大白鲨影院",
@@ -1834,6 +1829,18 @@
             "filterable": 1
         },
         {
+            "key": "懂片",
+            "name": "🍊懂片影视",
+            "type": 3,
+            "api": "csp_DongPian"
+        },
+        {
+            "key": "杜北",
+            "name": "🍊杜北影视",
+            "type": 3,
+            "api": "csp_Dubk"
+        },
+        {
             "key": "星辰影视1",
             "name": "🌠星辰影视1",
             "type": 3,
@@ -1997,7 +2004,7 @@
                 "dataIv": "OC1A06E197EF10CF3F6058CA7A803B5E",
                 "pkg": "com.asjdhjhd.mgd.p3",
                 "host": "",
-                "site": "https://123-1349250429.cos.ap-shanghai.myqcloud.com/app.txt",
+                "site": "https://1848463092.cdn.123clouddisk.com/1848463092/cct/az.txt",
                 "version": "3.0.7.0",
                 "decrypt": "1"
             }
@@ -2075,7 +2082,7 @@
             "type": 3,
             "api": "csp_App3Q",
             "ext": {
-                "host": "https://45.150.167.18:8000",
+                "host": "https://skykb.com",
                 "finger": "SF-A962FEC75DA28D7514F2A16580334272A78AC0A8429F10C94F47C1BAFC876E3F",
                 "updateId": "43c1ef69-3748-aaeb-317f-c621c77653ee",
                 "deviceBrand": "vivo",

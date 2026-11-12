@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-# ============ 未来影院 gygxpt.py v2.13 (播放本地代理 + 同集自动换线) ============
+# ============ 未来影院 gygxpt.py  ============
+# v2.14 仅一处改动: detailContent 的 vod_content 统一拼上 INTRO_PREFIX 前缀;
+#       其余逻辑与 v2.13 完全一致(播放本地代理 + 同集自动换线 + 探测矩阵 + 空分类体检), 播放链未动。
 # v2.13 ①**播放本地代理**(治"有的线路不能播"): 新增 _px_proxy() 内嵌 ThreadingHTTPServer(127.0.0.1:9978-9988),
 #         /p?url=&k= 路由: 抓流时带 UA+Referer(失败自动降为无 Referer/裸socket 兜底), m3u8 逐行重写为代理地址
 #         (含 #EXT-X-KEY URI / master 相对子列表 / 跨域分片), 分片原样透传并支持 Range(206+Content-Range);
@@ -8,51 +10,8 @@
 #       ③**同集自动换线 _alt_play()**: 当前线路取不出 m3u8 时, 依次试其它 sid 同集(≤8 条, 5s 预算);
 #       ④play 取页超时 8->6s, 避免 App 侧等待过久; destroy() 优雅关闭代理;
 #       ⑤根因实证: 秒播资源等 CDN 分片裸请求(无 UA/Referer)会被拒; 播放器若不转发 header 就黑屏,
-#         走代理后播放链与播放器自身头行为解耦。实测 proxy E2E: m3u8 200 + 分片 200(sync=0x47)# ============ 未来影院 gygxpt.py v2.12 (搜索翻页 + 全链时间预算护栏) ============
+#         走代理后播放链与播放器自身头行为解耦。实测 proxy E2E: m3u8 200 + 分片 200(sync=0x47)
 # 定版: 88模板 v7.5 能力层(六接口契约+四壳扩展+localProxy) + www.gygxpt.com 抓取 | 2026-09-22
-# v2.12 ①搜索翻页: /search.php?searchword=kw&page=N 实测共60页/296部 → searchContent 支持 pg>1,
-#         _spc() 解析总页/总数, 返回 pagecount/limit/total; 旧版 pg>1 直接返回空属功能缺陷, 已修;
-#       ②搜索快通道 _fast(): 各通道只试一次不重试, 硬预算 FAST_TO=7s(防 App 侧搜索超时);
-#       ③全链时间预算: PR_BUDGET=8s(探测矩阵总预算, 超时跳剩余变体) / PR_TO=4s(单变体) /
-#         LIST_BUDGET=10s(列表取回) → 失败路径不再拖到 20s+ (原 cat fail-path 25.6s);
-#       ④homeContent 触发后台体检(_sweep_async/_sweep), 逐分类试抓,
-#         "取回成功但页面内 0 个 /gygvod/ 链接"判为空分类 → 加入 _empty 并从导航隐藏(连续4次取回失败即中止防限速);
-#       ⑤封面100%: 站点首页/搜索页夹带"排行榜"纯文字区块(v-rank 无封面), 混入列表会出现空白图 →
-#         新增 _wp() 过滤无封面条目, 并在 _hv 的截断之前过滤(保证仍出满 36 条带图卡片);
-#       ⑥分类表精简: 剔除 55 预告(用户指定) 与 60 亚洲剧(实测站点"第0页"空分类), 分类 44 -> 41
-# 定版: 88模板 v7.5 能力层(六接口契约+四壳扩展+localProxy) + www.gygxpt.com 抓取 | 2026-09-22
-# v2.11 ①自动去空分类: homeContent 触发后台体检(_sweep_async/_sweep), 逐分类试抓,
-#        "取回成功但页面内 0 个 /gygvod/ 链接"判为空分类 → 加入 _empty 并从导航隐藏(连续4次取回失败即中止防限速);
-#     ②封面100%: 站点首页/搜索页夹带"排行榜"纯文字区块(v-rank 无封面), 混入列表会出现空白图 →
-#        新增 _wp() 过滤无封面条目, 并在 _hv 的截断之前过滤(保证仍出满 36 条带图卡片);
-#     ③分类表精简: 剔除 55 预告(用户指定) 与 60 亚洲剧(实测站点"第0页"空分类), 分类 44 -> 41
-# v2.10 分类精简(去预告/去空分类) 基座
-# v2.9 自学习: 探测矩阵认出可用变体后自动切换 UA/协议/站点/传输(含 _sk 裸socket优先 + _pip IP直连)
-#   UA(3R/4R->MUA) / 协议(5H->http) / 站点(6M->m.) / 传输(7S/8S->_sk 裸socket优先), 后续请求直接走它;
-#   探测卡名称改为「【3R手机UA=OK129342】」同行相邻, 前端截断也不丢配对
-# v2.8 探测矩阵 + requests 强制 HTTP/1.1(_ctx ALPN http/1.1 + _h1 适配器) + trust_env=False
-# v2.7 针对"标题已出但列表空(截图证实源已加载)": MIN_GAP 0.35->0.25, RETRY 3->2, BACKOFF 0.8->0.35,
-#   _get 默认 15->8s, _f/_ft 默认 20000->8000ms; _hv() 加时间预算护栏(超 14s 停止轮询/首页失败直接快返回);
-#   _dm() 诊断条带封面 URL(前端必定渲染) + vod_remarks="发我这行"。失败路径实测 home 2.15s / cat 1.47s, 不再触发 App 侧超时。
-# v2.6 加载即安全: _ensure() 自愈(未调 init 也能跑); homeContent 优先返回 class(43) 且异常时仍返回;
-#   homeVideoContent 分层回退到诊断行; 六接口全补 _ensure()
-# v2.5 针对"刷新都不出视频": 取回顺序改为 ① App 自带 HTTP 栈 self.fetch(设备侧实测可通)
-#   ② requests + 浏览器头 ③ 裸 socket 兜底; 新增源内自诊断(全通道失败时列表显示【诊断】各通道结果);
-#   extend 支持 host=/proxy= 逃生口(IP 被 WAF 拉黑时换域名/挂代理)
-# v2.4 修复"分类空白"(实测根因): openresty WAF 对同 IP 短时多次请求直接掐连接(响应 0 字节),
-#   旧 _get 一次失败即返回空 -> 分类/首页列表全空。修复:
-#   ① 节流 MIN_GAP=0.35s + 失败退避重试 RETRY=3/BACKOFF=0.8 ② 断连自动换连接(_reset)
-#   ③ 浏览器级请求头(Sec-Fetch-*/Upgrade-Insecure-Requests), 与 WAF 白名单特征对齐
-#   ④ homeVideoContent 由 5 个分类页轮询改为单请求首页解析, 请求数 -80%
-#   ⑤ 卡片解析与属性顺序解耦(href/title 任意序) + 名称三级兜底(title/img.alt/锚文本)
-# v2 增强(浏览器实测站点全量结构):
-#   v2.1 fix: total=36 -> total=pagecount*36 修复分类页翻页空白
-#   v2.2 add: type_pid 字段 + 首页多分类 fallback + total 翻页修复
-#   v2.3 add: 聚合推荐首页内容 + categoryContent items 补 type_id/type_name 确保前端正确关联显示
-#   ② 线路名清洗: 真实页 tab 文本 "无尽资源7集" -> "无尽资源"(正则去尾部"数字+集")
-#   ③ 翻页提速: pagecount 按分类 TTL 缓存10分钟 + Session 复用 keep-alive
-#   ④ 图片加固: 列表 data-src/data-original/src 三路兜底 + 搜索卡片图片 group 修正
-#   ⑤ 每页条数按实测修正 CAT_PAGE=30 -> 36
 # 站点: https://www.gygxpt.com (未来影院, 免费无广告, MacCMS 模板体系, 无盾无鉴权)
 # ★ 协议总览(实测):
 #   首页   /                          -> 多个 ul.tv-list 区块(卡片 li)
@@ -109,6 +68,10 @@ PX_MODE = 2            # ★ v2.13 播放模式: 0=直连输出 1=智能探测(�
 PROXY_M3U8 = True      # ★ 本地代理开关(127.0.0.1:9978-9988): m3u8+分片重写, 治防盗链/需特殊头/跨域分片黑屏
 FORCE_PX = False       # ★ 强制 mp4 也走代理(若真机仍有线路黑屏, 改 True)
 PX_PORTS = range(9978, 9989)  # 本地代理端口范围(与影视仓/zzoc 同段)
+
+# ★ v2.14 简介统一前缀(用户指定)
+INTRO_PREFIX = '🍊小橙子为您介绍剧情👉请不要相信视频中的广告，以免上当受骗！'
+
 # 完整 41 分类(浏览器实抓, 2026-09-22):
 #   电影子类 5-12/28/29 | 电视剧子类 13-16/32/33/34/42
 #   综艺子类 45-48 | 动分子类 49-54 | 短剧子类 61-67/69(缺 68)
@@ -963,6 +926,11 @@ class Spider(Spider):
             intro = re.search(r'class="[^"]*infor_intro[^"]*"[^>]*>(.*?)</div>', h, re.S)
             if intro:
                 d['vod_content'] = re.sub(r'<[^>]+>', '', intro.group(1)).strip()[:800]
+        # ★ v2.14 简介统一前缀(用户指定)
+        if d['vod_content']:
+            d['vod_content'] = INTRO_PREFIX + '\n' + d['vod_content']
+        else:
+            d['vod_content'] = INTRO_PREFIX
         rmk = re.search(r'class="[^"]*v-tips[^"]*"[^>]*>([^<]*)<', h)
         if rmk:
             d['vod_remarks'] = rmk.group(1).strip()

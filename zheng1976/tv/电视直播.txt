@@ -4,12 +4,8 @@
 重温经典,http://113.26.251.182:8009/hls/59/index.m3u8
 重温经典,http://110.53.235.13:10085/tsfile/live/1002_1.m3u8?key=txiptv&playlive=1&authid=0
 重温经典,http://218.206.193.218:8888/hls/29/index.m3u8
-章贡综合,http://218.95.14.41:8000/hls/stream0.m3u8
-南康综合频道,https://play-a2.quklive.com/live/1758525653004384.m3u8
-瑞金综合频道,https://play-a2.quklive.com/live/1760408109205119.m3u8
 赣州新闻,http://115.153.254.81/PLTV/88888888/224/3221227254/121266741.smil/index.m3u8?fmt=ts2hls
 赣州公共,http://115.153.254.81/PLTV/88888888/224/3221227262/121375235.smil/index.m3u8?fmt=ts2hls
-赣州教育,http://115.153.254.81/PLTV/88888888/224/3221227263/121375179.smil/index.m3u8?fmt=ts2hls
 南昌新闻,http://115.153.254.81/PLTV/88888888/224/3221227078/113409131.smil/index.m3u8?fmt=ts2hls
 南昌都市,http://115.153.254.81/PLTV/88888888/224/3221227075/113409249.smil/index.m3u8?fmt=ts2hls
 南昌资讯,http://115.153.254.81/PLTV/88888888/224/3221227080/113409255.smil/index.m3u8?fmt=ts2hls

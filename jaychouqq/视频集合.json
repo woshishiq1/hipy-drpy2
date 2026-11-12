@@ -2800,5 +2800,74 @@
         "url": "?ac=videolist&t=38&pg={{page}}"
       }
     ]
+  },
+  {
+    "name": "📺91爱视频",
+    "api": "https://a2d.91aimf.fun",
+    "type": 2,
+    "searchable": true,
+    "header": {
+      "User-Agent": "Mozilla/5.0 (Linux; Android 13; SM-S9080) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+      "Referer": "https://a2d.91aimf.fun/"
+    },
+    "categories": [
+      {
+        "name": "国产自拍",
+        "url": "/type/1-{{page}}.html",
+        "url2": "/type/1-.html"
+      },
+      {
+        "name": "主播诱惑",
+        "url": "/type/2-{{page}}.html",
+        "url2": "/type/2-.html"
+      },
+      {
+        "name": "探花约炮",
+        "url": "/type/3-{{page}}.html",
+        "url2": "/type/3-.html"
+      },
+      {
+        "name": "日韩无码",
+        "url": "/type/9-{{page}}.html",
+        "url2": "/type/9-.html"
+      },
+      {
+        "name": "中文字幕",
+        "url": "/type/10-{{page}}.html",
+        "url2": "/type/10-.html"
+      },
+      {
+        "name": "欧美激情",
+        "url": "/type/15-{{page}}.html",
+        "url2": "/type/15-.html"
+      },
+      {
+        "name": "动漫",
+        "url": "/type/18-{{page}}.html",
+        "url2": "/type/18-.html"
+      }
+    ],
+    "list": {
+      "list": "a[href*='/play/']",
+      "name": "img@alt||title||text",
+      "tips": "p@text",
+      "coverUrl": "img@src||img@data-src",
+      "detailUrl": "href"
+    },
+    "search": {
+      "url": "/vodsearch/-------------.html?wd={{key}}",
+      "list": "a[href*='/play/']",
+      "name": "img@alt||title",
+      "coverUrl": "img@src",
+      "detailUrl": "href"
+    },
+    "detail": {
+      "meta": "h1@text||title@text"
+    },
+    "play": {
+      "list": "body@js:function getPlay(html){var r=[],m=html.match(/player_aaaa\\s*=\\s*(\\{[\\s\\S]*?\\})<\\/script>/);if(m){try{var j=JSON.parse(m[1].replace(/'/g,'\"'));if(j.url)r.push({name:'正片',url:j.url});}catch(e){}}if(!r.length){m=html.match(/https?:\\/\\/[^\\s\"']+\\.m3u8[^\\s\"']*/);if(m)r.push({name:'正片',url:m[0]});}return r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "name": "$.name",
+      "url": "$.url"
+    }
   }
 ]
