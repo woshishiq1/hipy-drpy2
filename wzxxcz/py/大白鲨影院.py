@@ -3,10 +3,17 @@
 大白鲨影院 shipin.trjsgc.com | TVBox Python 爬虫
 站点: stui 模板 + MacCMS + Cloudflare
 关键:
-  - 分类 16 个（拼音 slug），筛选走 12 段 /vodshow/ URL（类型-地区-空-剧情-语言-字母-空-空-页码-空-空-年份）
+  - 分类 5 个（与站点导航一致）：电影 / 连续剧 / 综艺 / 动漫 / 热播短剧
+  - 电影、连续剧页的“按类型”导航做成筛选第一栏（动作片…、国产剧…），与站点筛选面板一致
+  - “按时间 / 按人气 / 按评分”排序为 12 段 URL 的第 3 段（time/hits/score）
+  - 筛选走 12 段 /vodshow/ URL（类型-地区-排序-剧情-语言-字母-空-空-页码-空-空-年份）
   - 分页必须用 ?page=N（路径式页码会被 Cloudflare 拦），列表 36 条/页
   - 详情 /tr-{slug}.html，播放 /trplay-{slug}-{sid}-{ep}.html
   - 线路顺序按页面 stui-pannel-box b playlist 块顺序（与 sid 大小无关）
+  - 简介取详情页下方“剧情简介”整段（短“简介”常只有一句，会截断）
+  - 主演/导演：详情页数据行被站点模板截断（示例只到“王”），改用“剧情简介”宣传句
+    “本部作品是由导演X，主演A,B,C…等一起努力共同拍摄完成的”取全量名单
+  - 首页只保留站点“最新XX”5 个分块，分组带首集封面
   - Cloudflare 挑战页用附加随机 query 绕过
 """
 import re
@@ -70,27 +77,35 @@ PAGE_SIZE = 36
 SEARCH_SIZE = 10
 
 # ------------------------------------------------------------------ 分类
-# 站点导航 16 个分类（全部为拼音 slug，详情页即 /tr-{slug}.html）
+# 站点导航 5 个分类（拼音 slug，详情页即 /tr-{slug}.html）
 CLASSES = [
-    {"type_id": "dianying",      "type_name": "电影",   "tpl": "MOVIE"},
-    {"type_id": "dongzuopian",   "type_name": "动作片", "tpl": "MOVIE"},
-    {"type_id": "xijupian",      "type_name": "喜剧片", "tpl": "MOVIE"},
-    {"type_id": "aiqingpian",    "type_name": "爱情片", "tpl": "MOVIE"},
-    {"type_id": "kehuanpian",    "type_name": "科幻片", "tpl": "MOVIE"},
-    {"type_id": "kongbupian",    "type_name": "恐怖片", "tpl": "MOVIE"},
-    {"type_id": "juqingpian",    "type_name": "剧情片", "tpl": "MOVIE"},
-    {"type_id": "zhanzhengpian", "type_name": "战争片", "tpl": "MOVIE"},
-    {"type_id": "lianxuju",      "type_name": "连续剧", "tpl": "TV"},
-    {"type_id": "guochanju",     "type_name": "国产剧", "tpl": "TV"},
-    {"type_id": "gangtaiju",     "type_name": "港台剧", "tpl": "TV"},
-    {"type_id": "rihanju",       "type_name": "日韩剧", "tpl": "TV"},
-    {"type_id": "oumeiju",       "type_name": "欧美剧", "tpl": "TV"},
-    {"type_id": "zongyi",        "type_name": "综艺",   "tpl": "VARIETY"},
-    {"type_id": "dongman",       "type_name": "动漫",   "tpl": "ANIME"},
-    {"type_id": "duanju",        "type_name": "短剧",   "tpl": "SHORT"},
+    {"type_id": "dianying", "type_name": "电影",     "tpl": "MOVIE"},
+    {"type_id": "lianxuju", "type_name": "连续剧",   "tpl": "TV"},
+    {"type_id": "zongyi",   "type_name": "综艺",     "tpl": "VARIETY"},
+    {"type_id": "dongman",  "type_name": "动漫",     "tpl": "ANIME"},
+    {"type_id": "duanju",   "type_name": "热播短剧", "tpl": "SHORT"},
 ]
 
-# 各分类页真实筛选维度（抓自站点 stui-screen__list，按字母顺序去重）
+# 站点“按类型”导航（筛选面板第一栏），值即目标分类 type_id
+# 仅 电影 / 连续剧 两个栏目页有，其余栏目和子分类页没有
+_SUB_TYPE = {
+    "dianying": [
+        ("动作片", "dongzuopian"), ("喜剧片", "xijupian"), ("爱情片", "aiqingpian"),
+        ("科幻片", "kehuanpian"), ("恐怖片", "kongbupian"), ("剧情片", "juqingpian"),
+        ("战争片", "zhanzhengpian"),
+    ],
+    "lianxuju": [
+        ("国产剧", "guochanju"), ("港台剧", "gangtaiju"),
+        ("日韩剧", "rihanju"), ("欧美剧", "oumeiju"),
+    ],
+}
+
+# 站点排序行（分类页筛选块下方），值即 URL 第 3 段
+_SORT = [
+    ("按时间", "time"), ("按人气", "hits"), ("按评分", "score"),
+]
+
+# 各分类页真实筛选维度（抓自站点 stui-screen__list，按站点顺序）
 _F_MOVIE = {
     "剧情": "喜剧 爱情 恐怖 动作 科幻 剧情 战争 警匪 犯罪 动画 奇幻 武侠 冒险 枪战 悬疑 惊悚 经典 青春 文艺 微电影 古装 历史 运动 农村 儿童 网络电影",
     "地区": "大陆 香港 台湾 美国 法国 英国 日本 韩国 德国 泰国 印度 意大利 西班牙 加拿大 其他",
@@ -140,8 +155,11 @@ _TPL = {
 }
 
 # 12 段 URL 中各筛选维度所在的位置
-# 巧妙地把「排序」塞进第 6 段（原本字母的位置），实现下拉菜单
-SEG_IDX = {"剧情": 3, "地区": 1, "年份": 11, "语言": 4, "字母": 5, "排序": 5}
+# /vodshow/{type}-{area}-{by}-{class}-{lang}-{letter}-{}-{}-{page}-{}-{}-{year}.html
+SEG_IDX = {"剧情": 3, "地区": 1, "年份": 11, "语言": 4, "字母": 5}
+
+# 排序段位（by）
+SEG_SORT = 2
 
 # ------------------------------------------------------------------ 正则
 _RE_THUMB_A = re.compile(r'<a\b[^>]*class="[^"]*stui-vodlist__thumb[^"]*"[^>]*>', re.I)
@@ -205,6 +223,17 @@ def _seg_body(href):
     body = href.split("?")[0].split("#")[0]
     body = body.replace("/vodshow/", "").replace(".html", "")
     return urllib.parse.unquote(body).split("-")
+
+
+def _names(s):
+    """把宣传句里的名单切成条目（兼容 , ， 、 / 空格）"""
+    parts = re.split(r'[,，、/\s]+', s or "")
+    out = []
+    for x in parts:
+        x = x.strip(" ，,、/。")
+        if x and x not in out:
+            out.append(x)
+    return out
 
 
 class Spider(Spider):
@@ -325,14 +354,7 @@ class Spider(Spider):
             if not name:
                 continue
             seen.add(slug)
-            
-            # 强行获取真实封面（优先拿 data-original，过滤默认 loading 图）
             pic = _attr(tag, "data-original") or _attr(tag, "data-src") or _attr(tag, "src")
-            if not pic or "load.gif" in pic:
-                img = re.search(r'<img\b[^>]*>', seg, re.I)
-                if img:
-                    pic = _attr(img.group(0), "data-original") or _attr(img.group(0), "data-src") or _attr(img.group(0), "src")
-
             rm = _RE_PIC_TEXT.search(seg)
             remark = _html(rm.group(1)) if rm else ""
             am = _RE_ACTORS_P.search(seg)
@@ -389,74 +411,36 @@ class Spider(Spider):
     # ------------------------------------------------------------ 首页
     def homeContent(self, filter):
         result = {}
-        classes = self._nav_classes()
-        if not classes:
-            classes = [{"type_id": c["type_id"], "type_name": c["type_name"]} for c in CLASSES]
-        result["class"] = classes
-
+        result["class"] = [{"type_id": c["type_id"], "type_name": c["type_name"]}
+                           for c in CLASSES]
         if filter:
             filters = {}
-            for c in classes:
-                tid = c["type_id"]
-                meta = self._fmeta.get(tid)
-                if meta is None:
-                    h = self._fetch(HOST + "/vodtype/%s.html" % tid)
-                    meta, order = self._parse_filters(h, tid)
-                    self._fmeta[tid] = meta
-                    self._fmeta_raw[tid] = order
-                
+            for c in CLASSES:
+                tpl = _TPL.get(c["tpl"], _F_MOVIE)
                 fl = []
-                if meta:
-                    # 动态解析出的真实筛选（已包含排序）
-                    for dim in ("排序", "剧情", "地区", "年份", "语言", "字母"):
-                        vals_map = meta.get(dim) or {}
-                        if not vals_map:
-                            continue
-                        seq = self._fmeta_raw.get(tid, {}).get(dim) or list(vals_map.keys())
-                        vals = [{"n": "全部", "v": ""}]
-                        for label in seq:
-                            if label and label != "全部":
-                                vals.append({"n": label, "v": label})
-                        fl.append({"key": dim, "name": dim, "value": vals})
-                else:
-                    # 抓不到时的硬编码兜底（加入排序）
-                    tpl = _TPL.get(next((c2["tpl"] for c2 in CLASSES if c2["type_id"] == tid), "MOVIE"), _F_MOVIE)
-                    # 排序兜底
-                    fl.append({"key": "排序", "name": "排序", "value": [{"n": "全部", "v": ""}, {"n": "按时间", "v": "time"}, {"n": "按人气", "v": "hits"}, {"n": "按评分", "v": "score"}]})
-                    for dim in ("剧情", "地区", "年份", "语言", "字母"):
-                        words = (tpl.get(dim) or "").split()
-                        if not words:
-                            continue
-                        vals = [{"n": "全部", "v": ""}]
-                        for w in words:
-                            vals.append({"n": w, "v": w})
-                        fl.append({"key": dim, "name": dim, "value": vals})
-                filters[tid] = fl
+                # “类型”栏（站点归类导航，仅 电影 / 连续剧 栏目页有）
+                subs = _SUB_TYPE.get(c["type_id"]) or []
+                if subs:
+                    vals = [{"n": "全部", "v": ""}]
+                    for sub_name, sub_tid in subs:
+                        vals.append({"n": sub_name, "v": sub_tid})
+                    fl.append({"key": "类型", "name": "类型", "value": vals})
+                for dim in ("剧情", "地区", "年份", "语言", "字母"):
+                    words = (tpl.get(dim) or "").split()
+                    if not words:
+                        continue
+                    vals = [{"n": "全部", "v": ""}]
+                    for w in words:
+                        vals.append({"n": w, "v": w})
+                    fl.append({"key": dim, "name": dim, "value": vals})
+                # 站点筛选块下方的排序行：按时间 / 按人气 / 按评分
+                vals = []
+                for s_name, s_val in _SORT:
+                    vals.append({"n": s_name, "v": s_val})
+                fl.append({"key": "排序", "name": "排序", "value": vals})
+                filters[c["type_id"]] = fl
             result["filters"] = filters
         return result
-
-    def _nav_classes(self):
-        h = self._home_html or self._fetch(HOST + "/")
-        if not h:
-            return []
-        self._home_html = h
-        out = []
-        seen = set()
-        m = re.search(r'<ul class="stui-header__menu[^"]*">([\s\S]*?)</ul>', h, re.I)
-        if not m:
-            return []
-        for href, tx in re.findall(r'<a\s+href="([^"]+)"[^>]*>([\s\S]*?)</a>', m.group(1), re.I):
-            hm = re.search(r'/vodtype/([A-Za-z0-9_]+)\.html', href, re.I)
-            if not hm:
-                continue
-            tid = hm.group(1)
-            if tid in seen:
-                continue
-            seen.add(tid)
-            nm = _html(tx)
-            if nm and nm != "首页":
-                out.append({"type_id": tid, "type_name": nm})
-        return out
 
     def homeVideoContent(self):
         h = self._home_html or self._fetch(HOST + "/")
@@ -465,26 +449,45 @@ class Spider(Spider):
         if not h:
             return {"list": []}
 
+        heads = []
+        for m in _RE_HEAD.finditer(h):
+            seg = h[m.end(): m.end() + 1000]
+            t = re.search(r'<h3 class="title">([\s\S]*?)</h3>', seg)
+            if not t:
+                continue
+            name = _html(t.group(1))
+            if not name:
+                continue
+            heads.append((m.end() + t.end(), name))
+
         groups = []
-        # 按顶层 stui-pannel 块切分
-        blocks = re.split(r'<div class="stui-pannel stui-pannel-bg', h)
-        for blk in blocks[1:]:
-            # 排除底部纯榜单块（没左栏的）
-            if 'col-lg-wide-75' not in blk:
+        used = set()
+        for i, (start, name) in enumerate(heads):
+            # 只取“最新电影/最新连续剧/最新综艺/最新动漫/最新热播短剧”这 5 块
+            # （周榜单、总榜单是纯文字榜，站点不给封面，App 里只能显示成色块）
+            if not name.startswith("最新"):
                 continue
-
-            # 提取当前块的标题（如“最新电影”）
-            m = re.search(r'<div class="col-lg-wide-75[^"]*">[\s\S]*?<h3 class="title">[\s\S]*?<a[^>]*>([\s\S]*?)</a>', blk)
-            gname = _html(m.group(1)) if m else "最新推荐"
-
-            # 精确提取左侧卡片列表，防止沾染右侧榜单
-            lm = re.search(r'<div class="col-lg-wide-75[^"]*">[\s\S]*?<ul class="stui-vodlist clearfix">([\s\S]*?)</ul>', blk)
-            if not lm:
+            end = heads[i + 1][0] if i + 1 < len(heads) else len(h)
+            block = h[start:end]
+            if "stui-vodlist__thumb" in block:
+                items = self._cards(block)
+            elif "stui-vodlist__text" in block:
+                items = self._rank_items(block)
+            else:
                 continue
-                
-            cards = self._cards(lm.group(1))
-            if cards:
-                groups.append({"vod_name": gname, "vod_id": "", "vod_list": cards})
+            if not items:
+                continue
+            gname = name
+            if gname in used:
+                gname = "%s %d" % (name, i + 1)
+            used.add(gname)
+            # 分组卡片也要有封面，否则 App 会画成“首字色块”
+            groups.append({
+                "vod_name": gname,
+                "vod_id": "",
+                "vod_pic": items[0]["vod_pic"],
+                "vod_list": items,
+            })
 
         return {"list": groups}
 
@@ -513,31 +516,17 @@ class Spider(Spider):
                 if label == "全部":
                     continue
                 seg = _seg_body(href)
-                if len(seg) < 12:
+                if len(seg) != 12:          # 0-9 这类跨段值直接跳过
                     continue
-                idx = SEG_IDX.get(dim)
-                if idx is not None and idx < len(seg) and seg[idx]:
-                    vals[label] = (idx, seg[idx])
-                    if label not in seq:
-                        seq.append(label)
+                filled = [i for i in range(1, 12) if seg[i]]
+                if len(filled) != 1:
                     continue
-                filled = [i for i in range(1, min(len(seg), 12)) if seg[i]]
-                if not filled:
-                    continue
-                last = filled[-1]
-                vals[label] = (last, seg[last])
+                vals[label] = (filled[0], seg[filled[0]])
                 if label not in seq:
                     seq.append(label)
             if vals:
                 meta[dim] = vals
                 order[dim] = seq
-                
-        # 特殊追加：把网页顶部的「排序」栏加进筛选里，强行绑定到第 6 段（索引 5）
-        if 'nav nav-head' in (h or ''):
-            sort_vals = {"按时间": (5, "time"), "按人气": (5, "hits"), "按评分": (5, "score")}
-            meta["排序"] = sort_vals
-            order["排序"] = list(sort_vals.keys())
-            
         return meta, order
 
     def _cat_url(self, tid, segs, pg):
@@ -554,13 +543,21 @@ class Spider(Spider):
     def categoryContent(self, tid, pg, filter, extend):
         pg = int(pg or 1)
         ext = dict(extend or {})
-        meta = self._fmeta.get(tid)
+        main_tid = str(tid or "")
+        # 站点“类型”栏等价于换分类，值就是目标 type_id
+        sub_tid = str(ext.pop("类型", "") or "").strip()
+        # 排序（time / hits / score）走第 3 段
+        sort_val = str(ext.pop("排序", "") or "").strip().lower()
+        if sort_val not in ("time", "hits", "score"):
+            sort_val = ""
+
+        meta = self._fmeta.get(main_tid)
         if meta is None:
-            base = self._fetch(HOST + "/vodtype/%s.html" % tid)
-            meta, order = self._parse_filters(base, tid)
-            self._fmeta[tid] = meta
-            self._fmeta_raw[tid] = order
-            if pg == 1 and not ext and base:
+            base = self._fetch(self._cat_url(main_tid, [""] * 12, 1))
+            meta, order = self._parse_filters(base, main_tid)
+            self._fmeta[main_tid] = meta
+            self._fmeta_raw[main_tid] = order
+            if pg == 1 and not ext and not sub_tid and not sort_val and base:
                 cards = self._cards(base)
                 return {
                     "list": cards,
@@ -574,14 +571,13 @@ class Spider(Spider):
         for k, v in ext.items():
             if not v:
                 continue
-            if meta and k in meta and v in meta[k]:
-                hit = meta[k][v]
+            hit = meta.get(k, {}).get(v)
+            if hit:
                 segs[hit[0]] = hit[1]
-            else:
-                if k in SEG_IDX:
-                    segs[SEG_IDX[k]] = v
+        if sort_val:
+            segs[SEG_SORT] = sort_val
 
-        h = self._fetch(self._cat_url(tid, segs, pg))
+        h = self._fetch(self._cat_url(sub_tid or main_tid, segs, pg))
         cards = self._cards(h)
         pc = self._pagecount(h, pg, PAGE_SIZE)
         return {
@@ -611,19 +607,51 @@ class Spider(Spider):
                 return ",".join(vals)
         return _html(seg)
 
-    def _long_desc(self, h):
+    def _promo(self, h):
+        """详情页下方“剧情简介”整段原文（站点宣传句 + 剧情正文）"""
         i = h.find('id="desc"')
         if i < 0:
             return ""
         blk = h[i: i + 6000]
         p = re.search(r'<p class="col-pd">([\s\S]*?)</p>', blk, re.I)
-        if not p:
-            return ""
-        txt = _html(p.group(1))
-        m = re.search(r'剧情简述\s*[:：]?\s*(.+)$', txt)
+        return _html(p.group(1)) if p else ""
+
+    def _plot(self, promo):
+        """从宣传句里剥出“剧情简述”后的正文（去掉站点套话）"""
+        m = re.search(r'剧情简述\s*[:：]?\s*(.+)$', promo or "")
         if m and len(m.group(1).strip()) > 8:
             return m.group(1).strip()
-        return txt
+        return promo or ""
+
+    def _long_desc(self, h):
+        return self._plot(self._promo(h))
+
+    def _promo_meta(self, promo):
+        """从宣传句取全量名单：
+        本部作品是由导演柏杉，主演A,B,C…等一起努力共同拍摄完成的
+        该作品在2026年上映于 中国大陆 / 新加坡 / 马来西亚地区
+        站点数据行会把主演截断（只留 5 个、末尾还被砍半），这里才是全的
+        """
+        out = {}
+        m = re.search(r'导演\s*([^，。,]{1,80}?)\s*[，,]\s*主演', promo or "")
+        if not m:
+            m = re.search(r'导演\s*([^，。,]{1,60}?)\s*[，。]', promo or "")
+        if m and m.group(1).strip():
+            ds = _names(m.group(1))
+            if ds:
+                out["director"] = ",".join(ds)
+        m = re.search(r'主演\s*([^。]{2,600}?)\s*等', promo or "")
+        if m:
+            names = _names(m.group(1))
+            if len(names) >= 2:
+                out["actor"] = ",".join(names)
+        m = re.search(r'(\d{4})\s*年上映于\s*([^。]{1,200}?)地区', promo or "")
+        if m:
+            out["year"] = m.group(1)
+            areas = _names(m.group(2))
+            if areas:
+                out["area"] = ",".join(areas)
+        return out
 
     def detailContent(self, ids):
         vid = ids[0] if isinstance(ids, (list, tuple)) else ids
@@ -684,7 +712,7 @@ class Spider(Spider):
         if cm:
             cat = _html(cm.group(1))
 
-        # 短简介
+        # 短简介（站点详情页顶部那句，通常只有一句）
         desc = ""
         dm = re.search(r'<p class="desc[^"]*">([\s\S]*?)</p>', h, re.I)
         if dm:
@@ -694,28 +722,42 @@ class Spider(Spider):
         if len(desc) < 12:
             desc = ""
 
-        long_desc = self._long_desc(h)
+        promo = self._promo(h)
+        long_desc = self._plot(promo)
 
-        # 简介拼装：短简介优先，缺失则用长简介里的剧情简述
-        if desc:
-            content = INTRO_PREFIX + "\n" + desc
-            if long_desc and desc[:30] not in long_desc:
-                content += "\n" + long_desc
+        # 数据行被站点模板截断的字段，用宣传句里的全量名单补齐（只在更全时覆盖）
+        pm = self._promo_meta(promo)
+        if pm.get("actor") and len(pm["actor"]) > len(actor):
+            actor = pm["actor"]
+        if pm.get("director") and len(pm["director"]) > len(director):
+            director = pm["director"]
+        if pm.get("area") and len(_names(pm["area"])) > len(_names(area)):
+            area = pm["area"]
+        if pm.get("year") and not year:
+            year = pm["year"]
+
+        # 简介：优先下方“剧情简介”整段，短简介常常只是首句（会截断剧情）
+        brief = ""
+        if long_desc and long_desc != "暂无简介" and len(long_desc) >= 12:
+            brief = long_desc
+        if not brief:
+            brief = desc
+
+        if brief:
+            content = INTRO_PREFIX + "\n" + brief
         else:
-            body = long_desc
-            if not body:
-                bits = []
-                if year and area:
-                    bits.append("%s年%s出品的%s" % (year, area, type_name or "影视作品"))
-                elif year:
-                    bits.append("%s年出品的%s" % (year, type_name or "影视作品"))
-                if director:
-                    bits.append("由%s执导" % director)
-                if actor:
-                    bits.append("由%s等主演" % actor)
-                if remark:
-                    bits.append("当前更新至%s" % remark)
-                body = "，".join(bits) if bits else "暂无简介"
+            bits = []
+            if year and area:
+                bits.append("%s年%s出品的%s" % (year, area, type_name or "影视作品"))
+            elif year:
+                bits.append("%s年出品的%s" % (year, type_name or "影视作品"))
+            if director:
+                bits.append("由%s执导" % director)
+            if actor:
+                bits.append("由%s等主演" % actor)
+            if remark:
+                bits.append("当前更新至%s" % remark)
+            body = "，".join(bits) if bits else "暂无简介"
             content = INTRO_PREFIX + "\n" + body
 
         # 线路：按 stui-pannel-box b playlist 块顺序取，块顺序与 sid 无关

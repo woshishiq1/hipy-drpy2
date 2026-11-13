@@ -10,6 +10,12 @@
             "url": "https://ds65.tv1288.xyz"
         },
         {
+            "name": "央卫港台1",
+            "type": 0,
+            "ua": "okhttp/5.3.2",
+            "url": "http://tv.305362.xyz/tg/live/27f2.txt"
+        },
+        {
             "name": "酒店",
             "type": 0,
             "ua": "okhttp/5.3.2",
@@ -1235,6 +1241,34 @@
             "api": "./py/剧下饭4K.py"
         },
         {
+            "key": "米诺",
+            "name": "🍚米诺影视",
+            "type": 3,
+            "api": "csp_AppMN",
+            "searchable": 1,
+            "quickSearch": 1,
+            "filterable": 0
+        },
+        {
+            "key": "下饭",
+            "name": "🍗下饭影视",
+            "type": 3,
+            "api": "csp_JuXiaFan",
+            "searchable": 1,
+            "quickSearch": 1,
+            "filterable": 1
+        },
+        {
+            "key": "快映fox",
+            "name": "快映影视",
+            "type": 3,
+            "api": "csp_AppFox",
+            "searchable": 1,
+            "quickSearch": 1,
+            "filterable": 0,
+            "ext": "./json/ky4kbgq7b273.json"
+        },
+        {
             "key": "追剧猫",
             "name": "🐈追剧猫",
             "type": 3,
@@ -1761,16 +1795,6 @@
             "ext": {
                 "url": "http://v.rbotv.cn"
             }
-        },
-        {
-            "key": "快映fox",
-            "name": "快映影视",
-            "type": 3,
-            "api": "csp_AppFox",
-            "searchable": 1,
-            "quickSearch": 1,
-            "filterable": 0,
-            "ext": "./json/ky4kbgq7b273.json"
         },
         {
             "key": "酷客影视1",
