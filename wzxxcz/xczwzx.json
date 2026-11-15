@@ -1416,6 +1416,12 @@
             "filterable": 1
         },
         {
+            "key": "看剧",
+            "name": "🍊看剧影视1",
+            "type": 3,
+            "api": "csp_KanJuAI"
+        },
+        {
             "key": "懂片",
             "name": "🍊懂片影视",
             "type": 3,

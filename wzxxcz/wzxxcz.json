@@ -1640,10 +1640,10 @@
             "api": "./py/云朵视频.py"
         },
         {
-            "key": "无极电影网",
-            "name": "🍊无极电影网",
+            "key": "无极影视1",
+            "name": "🐻‍❄️无极影视1",
             "type": 3,
-            "api": "./py/无极电影网(关梯).py"
+            "api": "./py/无极影视.py"
         },
         {
             "key": "果果短剧1",
@@ -1849,6 +1849,12 @@
             "searchable": 1,
             "quickSearch": 1,
             "filterable": 1
+        },
+        {
+            "key": "看剧",
+            "name": "🍊看剧影视1",
+            "type": 3,
+            "api": "csp_KanJuAI"
         },
         {
             "key": "懂片",
