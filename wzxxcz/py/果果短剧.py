@@ -1,681 +1,542 @@
-# -*- coding: utf-8 -*-
+# coding=utf-8
 """
-================================================================================
- TVBox / CatVod 系 -- Python 源「果果短剧」
-================================================================================
- 目标站点: https://app.ggduanju.com  (果果短剧)
- API 后端:  https://baidu.com.ifengying.cn/  (DSVod 模板，AES-CBC 加密响应)
-
- 接口清单:
-   GET  index.php/dsv1.api/config     -- 全站配置(分类表/筛选项/播放器配置)
-   POST index.php/dsv1.vod/show       -- 分类列表 {id, pid, by, page, token, class?, area?, year?, lang?}
-   POST index.php/dsv1.vod/search     -- 搜索   {wd, page, token}
-   GET  index.php/dsv1.vod/player     -- 详情   {id, token}
-   POST index.php/dsv1.vod/rank       -- 排行   {type, page, token}
-
- 响应解密: AES-CBC, key=IV='EFCD8D3D1DAA31F4', padding=PKCS7, base64 密文
-
- 播放地址: vod_play_url 里的链接均为直链 m3u8, parse=0 即可播放
-
-【合规提醒】仅供技术交流与个人学习。请遵守目标站点服务条款与 robots.txt,
- 控制请求频率, 不要对服务器造成压力; 不要采集、传播受版权保护的内容。
-================================================================================
+果果短剧 app.ggduanju.com | TVBox Python 爬虫
+后端: baidu.com.ifengying.cn  (index.php/dsv1.{接口})
+响应: AES-128-CBC / PKCS7 / base64, key=iv=EFCD8D3D1DAA31F4
 """
-
-import os
 import re
 import sys
 import json
 import time
 import base64
+import urllib.parse
 
-from urllib.parse import quote, urljoin, unquote
-
-# ================================================================================
-# 一、可选依赖探测
-# ================================================================================
-try:
-    import requests
-    _HAS_REQUESTS = True
-except ImportError:
-    _HAS_REQUESTS = False
-
-try:
-    from pyquery import PyQuery as pq
-    _HAS_PYQUERY = True
-except ImportError:
-    _HAS_PYQUERY = False
-
-try:
-    from Crypto.Cipher import AES
-    from Crypto.Util.Padding import unpad
-    _HAS_CRYPTO = True
-except ImportError:
-    _HAS_CRYPTO = False
-
-
-# ================================================================================
-# 二、基类导入兼容
-# ================================================================================
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(_THIS_DIR)
-sys.path.append(os.path.join(_THIS_DIR, '..'))
+sys.path.append('..')
 
 try:
     from base.spider import Spider
-    _BASE_INFO = 'base.spider.Spider'
 except ImportError:
+    import requests as _rq
     try:
-        from base.spider import BaseSpider as Spider
-        _BASE_INFO = 'base.spider.BaseSpider'
-    except ImportError:
-        try:
-            from spider import Spider
-            _BASE_INFO = 'spider.Spider'
-        except ImportError:
-            class _LocalStubSpider(object):
-                def fetch(self, url, headers={}, cookies=""):
-                    if not _HAS_REQUESTS:
-                        raise RuntimeError('need requests')
-                    return requests.get(url, headers=headers, timeout=15, verify=False)
-                def post(self, url, data, headers={}, cookies={}):
-                    return requests.post(url, data=data, headers=headers, timeout=15, verify=False)
-                def postJson(self, url, json, headers={}, cookies={}):
-                    return requests.post(url, json=json, headers=headers, timeout=15, verify=False)
-                def html(self, content):
-                    return content
-                def xpText(self, root, expr):
-                    return ''
-                def regStr(self, src, reg, group=1):
-                    m = re.search(reg, src)
-                    return m.group(group) if m else ''
-                def str2json(self, s):
-                    return json.loads(s)
-                def cleanText(self, src):
-                    return src
-                def loadModule(self, name, fileName):
-                    return None
-                def getDependence(self):
-                    return []
-            Spider = _LocalStubSpider
-            _BASE_INFO = 'LocalStub'
-
-
-# ================================================================================
-# 三、源主体
-# ================================================================================
-class Spider(Spider):
-
-    # ============================================================================
-    # 配置区
-    # ============================================================================
-    HOST = 'https://baidu.com.ifengying.cn'   # API 后端地址
-    NAME = '果果短剧'                          # 源显示名
-    AES_KEY = b'EFCD8D3D1DAA31F4'              # AES-CBC 密钥(同时用作 IV)
-    API_PREFIX = '/index.php/dsv1.'            # URL 前缀: {host}{prefix}{action}
-
-    # -- 分类表: 显示名 -> type_id --
-    CATES = {
-        '短剧': '1',
-        '电影': '2',
-        '电视剧': '3',
-        '动漫': '4',
-    }
-
-    # -- 电影子类型 (pid) --
-    MOVIE_SUB = {
-        '动作片': '6', '喜剧片': '7', '爱情片': '8', '科幻片': '9',
-        '恐怖片': '10', '剧情片': '11', '战争片': '12',
-    }
-
-    # -- 电视剧子类型 (pid) --
-    TV_SUB = {
-        '国产剧': '13', '港台剧': '14', '日韩剧': '15', '欧美剧': '16',
-    }
-
-    # -- 播放线路代码 -> 显示名 --
-    LINE_NAMES = {
-        'wwm3u8': '望望线路',
-        'modum3u8': '魔都线路',
-        '1080zyk': '幼稚线路',
-        'bfzym3u8': '暴风线路',
-        'ffm3u8': '非凡线路',
-        'dyttm3u8': '天堂线路',
-        'tym3u8': '天涯线路',
-        'ffzy': '非凡资源',
-        'lzm3u8': '量子线路',
-        'snm3u8': '索尼线路',
-        'takm3u8': '天空线路',
-    }
-
-    # -- 分类筛选配置 (type_id -> 支持的筛选维度) --
-    FILTER_CONFIG = {
-        '1': ['class'],
-        '2': ['class', 'area', 'year'],
-        '3': ['class', 'area', 'year'],
-        '4': ['class', 'area', 'year'],
-    }
-
-    # -- 各分类的 class 选项 --
-    CLASS_OPTIONS = {
-        '1': ['重生民国', '穿越年代', '现代言情', '反转爽文', '女恋总裁', '闪婚离婚', '都市脑洞', '古装仙侠'],
-        '2': ['爱情', '喜剧', '动作', '剧情', '科幻', '战争', '奇幻', '音乐', '西部', '历史',
-              '恐怖', '动画', '传记', '悬疑', '歌舞', '犯罪', '武侠', '惊悚', '冒险', '灾难', '家庭'],
-        '3': ['古装', '战争', '喜剧', '家庭', '犯罪', '动作', '奇幻', '剧情', '历史', '商战'],
-        '4': ['科幻', '热血', '推理', '搞笑', '冒险', '动作', '少女', '益智'],
-    }
-
-    # -- 地区选项 --
-    AREA_OPTIONS = ['大陆', '香港', '台湾', '日本', '韩国', '美国', '泰国', '新加坡', '其他']
-
-    # -- 年份选项 --
-    YEAR_OPTIONS = ['2026', '2025', '2024', '2023', '2022', '2021', '2020',
-                    '2019', '2018', '2017', '2016', '2015', '2014', '2013',
-                    '2012', '2011', '2010']
-
-    # -- 网络参数 --
-    TIMEOUT = 15
-    RETRY = 2
-    SLEEP_BASE = 1
-    ENCODING = 'utf-8'
-
-    # ============================================================================
-    # 四、生命周期方法
-    # ============================================================================
-    def init(self, extend=""):
-        self.host = extend if (extend and extend.startswith('http')) else self.HOST
-        self.host = self.host.rstrip('/')
-
-        self.headers = {
-            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                           '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'),
-            'Referer': 'https://app.ggduanju.com/',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-            'Origin': 'https://app.ggduanju.com',
-        }
-
-        self.session = None
-        if _HAS_REQUESTS:
-            self.session = requests.Session()
-            self.session.headers.update(self.headers)
-
-        self._dbg('init done: base=%s | requests=%s | crypto=%s'
-                  % (_BASE_INFO, _HAS_REQUESTS, _HAS_CRYPTO))
-
-    def getName(self):
-        return self.NAME
-
-    def getDependence(self):
-        return []
-
-    def destroy(self):
+        import urllib3
+        urllib3.disable_warnings()
+    except Exception:
         pass
 
-    # ============================================================================
-    # 五、工具方法
-    # ============================================================================
-    def _dbg(self, *msg):
-        print('[%s] %s' % (self.NAME, ' '.join(str(m) for m in msg)))
+    class _BaseSpider:
+        def __init__(self):
+            self._session = None
 
-    def _aes_decrypt(self, text):
-        """AES-CBC 解密 base64 密文, 返回 JSON dict"""
-        if not text or not _HAS_CRYPTO:
+        @property
+        def _sess(self):
+            if self._session is None:
+                self._session = _rq.Session()
+                self._session.verify = False
+                adapter = _rq.adapters.HTTPAdapter(
+                    pool_connections=10, pool_maxsize=10, max_retries=0)
+                self._session.mount('https://', adapter)
+                self._session.mount('http://', adapter)
+            return self._session
+
+        def fetch(self, url, params=None, headers=None, timeout=15, **kw):
+            r = self._sess.get(url, params=params, headers=headers,
+                               timeout=timeout, **kw)
+            r.encoding = 'utf-8'
+            return r
+
+        def post(self, url, data=None, json=None, headers=None,
+                 timeout=15, **kw):
+            r = self._sess.post(url, data=data, json=json, headers=headers,
+                                timeout=timeout, **kw)
+            r.encoding = 'utf-8'
+            return r
+
+        def log(self, *a, **kw):
+            try:
+                print("[ggduanju]", *a)
+            except Exception:
+                pass
+
+    Spider = _BaseSpider
+
+try:
+    from Crypto.Cipher import AES
+    from Crypto.Util.Padding import unpad as _unpad
+    _HAS_CRYPTO = True
+except Exception:
+    _HAS_CRYPTO = False
+
+
+HOST = "https://app.ggduanju.com"
+API_HOST = "https://baidu.com.ifengying.cn"
+API_PREFIX = "/index.php/dsv1."
+AES_KEY = b"EFCD8D3D1DAA31F4"
+UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
+      "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 "
+      "Mobile/15E148 Safari/604.1")
+DEFAULT_PIC = HOST + "/img/logo1.png"
+
+INTRO_PREFIX = "🍊小橙子为您介绍剧情👉请不要相信视频中的广告，以免上当受骗！"
+
+# 兜底分类（以站点 config.head_nav / type 实时返回为准）
+_FALLBACK_CLASSES = [
+    {"type_id": "netflix", "type_name": "Netflix"},
+    {"type_id": "1", "type_name": "短剧"},
+    {"type_id": "2", "type_name": "电影"},
+    {"type_id": "3", "type_name": "电视剧"},
+    {"type_id": "4", "type_name": "动漫"},
+    {"type_id": "han", "type_name": "韩剧"},
+]
+
+# 兜底线路别名（以站点 config.player.play 实时返回为准）
+_LINE_FALLBACK = {
+    "dyttm3u8": "天堂线路",
+    "1080zyk": "幼稚线路",
+    "bfzym3u8": "暴风线路",
+    "ffm3u8": "非凡线路",
+    "modum3u8": "魔都线路",
+    "tym3u8": "天涯线路",
+    "wwm3u8": "望望线路",
+}
+
+_ROW_LABELS = {"class": "类型", "area": "地区", "year": "年份", "lang": "语言"}
+
+
+class Spider(Spider):
+
+    def getName(self):
+        return "果果短剧"
+
+    # ---------- 基础 ----------
+    def init(self, extend=""):
+        try:
+            self.extend = json.loads(extend) if extend else {}
+        except Exception:
+            self.extend = {}
+        self.site_url = (self.extend.get("site") or HOST).rstrip("/")
+        self.api_host = (self.extend.get("api") or API_HOST).rstrip("/")
+        self.headers = {
+            "User-Agent": UA,
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Referer": self.site_url + "/",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        self.default_pic = DEFAULT_PIC
+        self._cfg = None
+        self._line_names = dict(_LINE_FALLBACK)
+        self._play_cache = {}
+        self._load_config()
+
+    def _api_url(self, endpoint):
+        return self.api_host + API_PREFIX + endpoint
+
+    def _decrypt(self, text):
+        if not text or not isinstance(text, str):
+            return {}
+        text = text.strip()
+        if not _HAS_CRYPTO:
+            self.log("  缺少 pycryptodome, 无法解密响应")
             return {}
         try:
-            raw = base64.b64decode(text)
-            cipher = AES.new(self.AES_KEY, AES.MODE_CBC, self.AES_KEY)
-            dec = unpad(cipher.decrypt(raw), AES.block_size)
-            return json.loads(dec.decode('utf-8'))
+            ct = base64.b64decode(text)
+            pt = _unpad(AES.new(AES_KEY, AES.MODE_CBC, AES_KEY).decrypt(ct), 16)
+            return json.loads(pt.decode("utf-8", "ignore"))
         except Exception as e:
-            self._dbg('AES decrypt fail:', e)
+            self.log("  解密失败: %s" % e)
             return {}
 
-    def _api_url(self, action):
-        """构造 API URL"""
-        return self.host + self.API_PREFIX + action
-
-    def _api_get(self, action, params=None):
-        """GET 请求 API, 返回解密后的 dict"""
-        url = self._api_url(action)
-        if params:
-            qs = '&'.join('%s=%s' % (k, quote(str(v), safe='')) for k, v in params.items() if v is not None)
-            if qs:
-                url += '?' + qs
-
-        for i in range(self.RETRY + 1):
+    def _request(self, method, endpoint, params=None, timeout=20):
+        params = params or {}
+        url = self._api_url(endpoint)
+        for i in range(3):
             try:
-                if _HAS_REQUESTS and self.session is not None:
-                    r = self.session.get(url, timeout=self.TIMEOUT, verify=False)
-                    if r.status_code == 200:
-                        return self._aes_decrypt(r.text)
-                    self._dbg('GET %d: %s' % (r.status_code, url))
+                if method.upper() == "POST":
+                    rsp = self.post(url, data=params, headers=self.headers,
+                                    timeout=timeout)
                 else:
-                    resp = self.fetch(url, headers=self.headers)
-                    if resp:
-                        return self._aes_decrypt(resp.text)
+                    rsp = self.fetch(url, params=params, headers=self.headers,
+                                     timeout=timeout)
+                text = getattr(rsp, "text", "") or ""
+                if text:
+                    return self._decrypt(text)
             except Exception as e:
-                self._dbg('GET fail(%d/%d) %s -> %s' % (i, self.RETRY, url, e))
-            time.sleep(self.SLEEP_BASE * (i + 1))
+                self.log("  请求重试 %d/%d %s: %s" % (i + 1, 3, endpoint, e))
+            time.sleep(1 + i)
         return {}
 
-    def _api_post(self, action, data=None):
-        """POST 请求 API, 返回解密后的 dict"""
-        url = self._api_url(action)
-        post_data = data or {}
+    def _load_config(self):
+        try:
+            d = self._request("GET", "api/config", {"token": ""})
+            if d.get("code") == 0 and isinstance(d.get("data"), dict):
+                self._cfg = d["data"]
+                play = (self._cfg.get("player") or {}).get("play") or {}
+                for flag, conf in play.items():
+                    if isinstance(conf, dict) and conf.get("name"):
+                        self._line_names[str(flag)] = conf["name"]
+        except Exception as e:
+            self.log("  配置加载失败: %s" % e)
+        if not self._cfg:
+            self._cfg = {}
 
-        for i in range(self.RETRY + 1):
-            try:
-                if _HAS_REQUESTS and self.session is not None:
-                    r = self.session.post(url, data=post_data, timeout=self.TIMEOUT, verify=False)
-                    if r.status_code == 200:
-                        return self._aes_decrypt(r.text)
-                    self._dbg('POST %d: %s' % (r.status_code, url))
-                else:
-                    resp = self.post(url, post_data, headers=self.headers)
-                    if resp:
-                        return self._aes_decrypt(resp.text)
-            except Exception as e:
-                self._dbg('POST fail(%d/%d) %s -> %s' % (i, self.RETRY, url, e))
-            time.sleep(self.SLEEP_BASE * (i + 1))
-        return {}
+    # ---------- 工具 ----------
+    def _fix_url(self, url):
+        if not url:
+            return ""
+        url = url.strip()
+        if url.startswith("//"):
+            return "https:" + url
+        if url.startswith("http"):
+            return url
+        if url.startswith("/"):
+            return self.site_url + url
+        return urllib.parse.urljoin(self.site_url + "/", url)
 
-    def fixUrl(self, u):
-        """相对路径补全"""
-        if not u:
-            return ''
-        u = u.strip()
-        if u.startswith('http://') or u.startswith('https://'):
-            return u
-        if u.startswith('//'):
-            return 'https:' + u
-        if u.startswith('/'):
-            return self.host + u
-        return urljoin(self.host + '/', u)
+    def _clean(self, s):
+        if not s:
+            return ""
+        s = re.sub(r"<br\s*/?>", "\n", s, flags=re.I)
+        s = re.sub(r"<[^>]+>", "", s)
+        s = (s.replace("\xa0", " ").replace("&nbsp;", " ")
+              .replace("&amp;", "&").replace("&quot;", '"')
+              .replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">")
+              .replace("&ldquo;", "“").replace("&rdquo;", "”")
+              .replace("&hellip;", "…"))
+        s = re.sub(r"[ \t\r\f\v]+", " ", s)
+        s = re.sub(r"\n{2,}", "\n", s)
+        return s.strip(" \n,，")
 
-    def cleanText(self, src):
-        """清洗文本: 去 HTML 标签、HTML 实体、压空白"""
-        if not src:
-            return ''
-        src = str(src)
-        # HTML 实体转换
-        entities = {
-            '&ldquo;': '"', '&rdquo;': '"', '&lsquo;': "'", '&rsquo;': "'",
-            '&hellip;': '...', '&amp;': '&', '&nbsp;': ' ',
-            '&lt;': '<', '&gt;': '>', '&quot;': '"',
+    def _drop_seo(self, text):
+        if not text:
+            return ""
+        keep = []
+        for line in text.split("\n"):
+            t = line.strip()
+            if not t:
+                continue
+            if ("完整版免费在线观看地址" in t or "分享给你的小伙伴" in t
+                    or self.site_url in t or self.api_host in t):
+                continue
+            keep.append(t)
+        return "\n".join(keep).strip()
+
+    def _line_name(self, flag):
+        flag = (flag or "").strip()
+        return self._line_names.get(flag) or self._clean(flag)
+
+    def _nav_id(self, url, key):
+        if url and "?" in url:
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+            if q.get("id"):
+                return q["id"][0]
+        if key and "|" in key:
+            return key.split("|", 1)[1]
+        return ""
+
+    def _card(self, c):
+        if not isinstance(c, dict) or not c.get("vod_id"):
+            return None
+        pic = c.get("vod_pic") or c.get("vod_pic_thumb") or ""
+        return {
+            "vod_id": str(c["vod_id"]),
+            "vod_name": self._clean(c.get("vod_name")),
+            "vod_pic": self._fix_url(pic) if pic else self.default_pic,
+            "vod_remarks": self._clean(c.get("vod_remarks")),
         }
-        for k, v in entities.items():
-            src = src.replace(k, v)
-        # 去标签
-        src = re.sub(r'<[^>]+>', '', src)
-        return re.sub(r'\s+', ' ', src).strip()
 
-    def _map_line_name(self, code):
-        """线路代码 -> 显示名"""
-        return self.LINE_NAMES.get(code, code)
+    def _cards(self, lst):
+        out, seen = [], set()
+        for c in lst or []:
+            card = self._card(c)
+            if not card or card["vod_id"] in seen:
+                continue
+            seen.add(card["vod_id"])
+            out.append(card)
+        return out
 
-    # ============================================================================
-    # 六、homeContent: 分类条与筛选器
-    # ============================================================================
-    def homeContent(self, filter):
-        result = {'class': [], 'filters': {}}
+    def _custom_cards(self, cid):
+        d = self._request("POST", "custom", {"id": cid, "token": ""})
+        widgets = d.get("data") if isinstance(d.get("data"), list) else []
+        cards = []
+        for w in widgets or []:
+            if isinstance(w, dict):
+                cards.extend(w.get("list", []) or [])
+        return self._cards(cards)
 
-        # -- 主分类 --
-        for name, tid in self.CATES.items():
-            result['class'].append({'type_id': str(tid), 'type_name': name})
+    # ---------- 分类 / 筛选 ----------
+    def _classes(self):
+        nav = (self._cfg.get("config") or {}).get("head_nav") or []
+        out = []
+        for n in nav:
+            name = self._clean(n.get("name"))
+            cid = self._nav_id(n.get("url") or "", n.get("key") or "")
+            if not cid or cid == "tuijian" or not name:
+                continue
+            out.append({"type_id": cid, "type_name": name})
+        if out:
+            try:
+                nav_map = {self._nav_id(x.get("url") or "", x.get("key") or ""):
+                           int(x.get("weight") or 0) for x in nav}
+                out.sort(key=lambda x: nav_map.get(x["type_id"], 0), reverse=True)
+            except Exception:
+                pass
+            return out
+        return _FALLBACK_CLASSES
 
-        # -- 子分类 (作为独立分类入口) --
-        for name, pid in self.MOVIE_SUB.items():
-            result['class'].append({'type_id': '2_%s' % pid, 'type_name': name})
-        for name, pid in self.TV_SUB.items():
-            result['class'].append({'type_id': '3_%s' % pid, 'type_name': name})
+    def _filters(self):
+        filters = {}
+        webf = (self._cfg.get("web") or {}).get("filter", {}) or {}
+        for t in (self._cfg.get("type") or []):
+            if t.get("type_mid") != 1:
+                continue
+            tid = str(t["type_id"])
+            ext = {}
+            if t.get("type_extend"):
+                try:
+                    ext = json.loads(t["type_extend"])
+                except Exception:
+                    ext = {}
+            rows = []
+            enabled = [k.strip() for k in str(webf.get(tid, "")).split(",") if k.strip()]
+            for k in enabled:
+                opts = [x.strip() for x in str(ext.get(k, "")).split(",") if x.strip()]
+                if not opts:
+                    continue
+                rows.append({
+                    "key": k,
+                    "name": _ROW_LABELS.get(k, k),
+                    "value": [{"n": "全部", "v": ""}] +
+                             [{"n": o, "v": o} for o in opts],
+                })
+            rows.append({"key": "by", "name": "排序",
+                         "value": [{"n": "最新", "v": "time"},
+                                   {"n": "最热", "v": "hits"}]})
+            filters[tid] = rows
+        return filters
 
-        # -- 筛选器: 只为主分类 1-4 生成 --
-        for tid, dims in self.FILTER_CONFIG.items():
-            filters = []
-
-            # 子分类 (pid) - 仅电影和电视剧
-            if tid == '2':
-                sub_values = [{'n': '全部', 'v': ''}]
-                for sn, sp in self.MOVIE_SUB.items():
-                    sub_values.append({'n': sn, 'v': sp})
-                filters.append({'key': 'pid', 'name': '类型', 'value': sub_values})
-            elif tid == '3':
-                sub_values = [{'n': '全部', 'v': ''}]
-                for sn, sp in self.TV_SUB.items():
-                    sub_values.append({'n': sn, 'v': sp})
-                filters.append({'key': 'pid', 'name': '类型', 'value': sub_values})
-
-            # class (分类)
-            if 'class' in dims:
-                vals = [{'n': '全部', 'v': ''}]
-                for c in self.CLASS_OPTIONS.get(tid, []):
-                    vals.append({'n': c, 'v': c})
-                filters.append({'key': 'class', 'name': '类型', 'value': vals})
-
-            # area (地区)
-            if 'area' in dims:
-                vals = [{'n': '全部', 'v': ''}]
-                for a in self.AREA_OPTIONS:
-                    vals.append({'n': a, 'v': a})
-                filters.append({'key': 'area', 'name': '地区', 'value': vals})
-
-            # year (年份)
-            if 'year' in dims:
-                vals = [{'n': '全部', 'v': ''}]
-                for y in self.YEAR_OPTIONS:
-                    vals.append({'n': y, 'v': y})
-                filters.append({'key': 'year', 'name': '年份', 'value': vals})
-
-            # by (排序)
-            filters.append({
-                'key': 'by', 'name': '排序', 'value': [
-                    {'n': '最新', 'v': 'time'},
-                    {'n': '最热', 'v': 'hits'},
-                ]
-            })
-
-            result['filters'][tid] = filters
-
-        return result
+    def homeContent(self, filter=False):
+        return {"class": self._classes(), "filters": self._filters()}
 
     def homeVideoContent(self):
-        """首页推荐: 取短剧分类第一页"""
-        return self.categoryContent('1', '1', {}, {})
+        cards = self._custom_cards("tuijian")
+        self.log("home 卡片: %d 条" % len(cards))
+        if not cards:
+            d = self._request("POST", "vod/show", {"page": 0, "token": ""})
+            cards = self._cards(d.get("list"))
+        return {"list": cards}
 
-    # ============================================================================
-    # 七、categoryContent: 分类列表页
-    # ============================================================================
     def categoryContent(self, tid, pg, filter, extend):
-        result = {'list': [], 'page': 1, 'pagecount': 1, 'limit': 20, 'total': 0}
         page = int(pg) if pg else 1
-        result['page'] = page
+        if isinstance(extend, str):
+            try:
+                extend = json.loads(extend)
+            except Exception:
+                extend = {}
+        if not extend:
+            extend = {}
+        for k in list(extend.keys()):
+            if extend[k] in ("", None, "全部"):
+                del extend[k]
 
-        try:
-            # 解析 tid: "1" 或 "2_6" (父_子)
-            tid = str(tid)
-            if '_' in tid:
-                parts = tid.split('_', 1)
-                type_id = parts[0]
-                pid = parts[1]
-            else:
-                type_id = tid
-                pid = (extend or {}).get('pid', '')
+        # 专题频道（Netflix / 韩剧 等）走 custom 小部件
+        if not str(tid).isdigit():
+            cards = self._custom_cards(str(tid))
+            self.log("  频道 %s: %d 条" % (tid, len(cards)))
+            return {"list": cards, "page": page, "pagecount": 1,
+                    "limit": len(cards) or 40, "total": len(cards)}
 
-            # 构造 POST 参数
-            data = {
-                'id': type_id,
-                'pid': pid or '',
-                'by': (extend or {}).get('by', ''),
-                'page': page,
-                'token': '',
-            }
+        body = {"id": str(tid), "page": page - 1, "token": ""}
+        for k in ("class", "area", "year", "lang", "by"):
+            if extend.get(k):
+                body[k] = extend[k]
 
-            # 筛选参数
-            for k in ('class', 'area', 'year', 'lang'):
-                v = (extend or {}).get(k, '')
-                if v:
-                    data[k] = v
+        self.log("category: id=%s %s" % (tid, body))
+        d = self._request("POST", "vod/show", body)
+        cards = self._cards(d.get("list"))
+        pagecount = int(d.get("pagecount") or 1)
+        total = int(d.get("total") or 0)
+        self.log("  最终: %d 条, 总页数: %d, 总数: %d" % (len(cards), pagecount, total))
+        return {
+            "list": cards, "page": page, "pagecount": pagecount,
+            "limit": int(d.get("limit") or 40), "total": total or pagecount * 40,
+        }
 
-            resp = self._api_post('vod/show', data)
-            if not resp or resp.get('code') != 0:
-                self._dbg('vod/show error: code=%s msg=%s' % (resp.get('code', '?'), resp.get('msg', '')))
-                return result
+    def searchContent(self, key, quick, pg="1"):
+        page = int(pg) if pg else 1
+        body = {"wd": key, "page": page - 1, "token": ""}
+        self.log("search: wd=%s" % key)
+        d = self._request("POST", "vod/search", body)
+        cards = self._cards(d.get("list"))
+        pagecount = int(d.get("pagecount") or 1)
+        self.log("  结果: %d 条, 总页数: %d" % (len(cards), pagecount))
+        return {
+            "list": cards, "page": page, "pagecount": pagecount,
+            "limit": int(d.get("limit") or 10), "total": int(d.get("total") or 0),
+        }
 
-            videos = []
-            for item in resp.get('list', []):
-                videos.append({
-                    'vod_id': str(item.get('vod_id', '')),
-                    'vod_name': self.cleanText(item.get('vod_name', '')),
-                    'vod_pic': item.get('vod_pic', '') or item.get('vod_pic_thumb', ''),
-                    'vod_remarks': self.cleanText(item.get('vod_remarks', '')),
-                })
+    def searchContentPage(self, key, quick, pg="1"):
+        return self.searchContent(key, quick, pg)
 
-            result['list'] = videos
-            result['pagecount'] = int(resp.get('pagecount', 1) or 1)
-            result['limit'] = int(resp.get('limit', len(videos)) or len(videos))
-            result['total'] = int(resp.get('total', len(videos)) or len(videos))
-
-        except Exception as e:
-            self._dbg('categoryContent error:', e)
-
-        return result
-
-    # ============================================================================
-    # 八、detailContent: 详情页与播放线路
-    # ============================================================================
+    # ---------- 详情 / 播放 ----------
     def detailContent(self, ids):
-        result = {'list': []}
         if not ids:
-            return result
-        vid = str(ids[0])
+            return {"list": []}
+        vod_id = str(ids[0])
+        vid = vod_id if vod_id.isdigit() else vod_id.rstrip("/").split("/")[-1]
+        self.log("detail: " + vid)
+        d = self._request("GET", "vod/player",
+                          {"id": vid, "token": "", "paw": "", "remember": ""})
+        info = d.get("info") or {}
+        if not info:
+            self.log("  详情为空")
+            return {"list": []}
 
-        vod = {
-            'vod_id': vid,
-            'vod_name': '',
-            'vod_pic': '',
-            'vod_content': '',
-            'vod_remarks': '',
-            'vod_year': '',
-            'vod_area': '',
-            'vod_actor': '',
-            'vod_director': '',
-            'type_name': '',
-            'vod_play_from': '',
-            'vod_play_url': '',
-        }
+        name = self._clean(info.get("vod_name")) or vid
+        pic = info.get("vod_pic") or info.get("vod_pic_thumb") or ""
+        remarks = self._clean(info.get("vod_remarks"))
+        director = re.sub(r"\s+", " ", self._clean(info.get("vod_director"))).strip()
+        actor = re.sub(r"\s+", " ", self._clean(info.get("vod_actor"))).strip()
+        area = self._clean(info.get("vod_area"))
+        year = self._clean(info.get("vod_year"))
+        type_name = self._clean(info.get("vod_class"))
 
-        try:
-            resp = self._api_get('vod/player', {'id': vid, 'token': ''})
-            if not resp or resp.get('code') != 0:
-                self._dbg('vod/player error: code=%s' % resp.get('code', '?'))
-                return result
+        score = info.get("vod_douban_score") or info.get("vod_score") or ""
+        if str(score) in ("0", "0.0", "0.00", "", "0.0分"):
+            score = ""
+        else:
+            score = str(score)
 
-            info = resp.get('info', {})
-            if not info:
-                return result
+        content = self._clean(info.get("vod_content")) or self._clean(info.get("vod_blurb"))
+        content = self._drop_seo(content)
+        content = INTRO_PREFIX + "\n" + content if content else INTRO_PREFIX
 
-            vod['vod_name'] = self.cleanText(info.get('vod_name', ''))
-            vod['vod_pic'] = info.get('vod_pic', '') or info.get('vod_pic_thumb', '')
-            vod['vod_content'] = self.cleanText(info.get('vod_content', ''))
-            vod['vod_remarks'] = self.cleanText(info.get('vod_remarks', ''))
-            vod['vod_year'] = self.cleanText(info.get('vod_year', ''))
-            vod['vod_area'] = self.cleanText(info.get('vod_area', ''))
-            vod['vod_actor'] = self.cleanText(info.get('vod_actor', ''))
-            vod['vod_director'] = self.cleanText(info.get('vod_director', ''))
-            vod['type_name'] = self.cleanText(info.get('type_name', ''))
+        play_from, play_url = self._parse_play(info)
+        if not play_from:
+            return {"list": []}
 
-            # -- 播放线路 --
-            play_from_raw = info.get('vod_play_from', '')
-            play_url_raw = info.get('vod_play_url', '')
+        return {"list": [{
+            "vod_id": vid,
+            "vod_name": name,
+            "vod_pic": self._fix_url(pic) if pic else self.default_pic,
+            "vod_content": content,
+            "vod_actor": actor,
+            "vod_director": director,
+            "vod_area": area,
+            "vod_year": year,
+            "vod_score": score,
+            "vod_remarks": remarks,
+            "vod_type": type_name,
+            "vod_play_from": "$$$".join(play_from),
+            "vod_play_url": "$$$".join(play_url),
+        }]}
 
-            if play_from_raw and play_url_raw:
-                # 拆线路
-                from_list = play_from_raw.split('$$$')
-                url_list = play_url_raw.split('$$$')
+    def _parse_play(self, info):
+        play_from, play_url = [], []
 
-                # 线路代码 -> 显示名
-                display_names = [self._map_line_name(code) for code in from_list]
+        # 标准 MacCMS legacy 字段
+        from_lines = str(info.get("vod_play_from") or "").split("$$$")
+        url_lines = str(info.get("vod_play_url") or "").split("$$$")
+        for i, line_flag in enumerate(from_lines):
+            if i >= len(url_lines):
+                break
+            eps = [e for e in str(url_lines[i]).split("#") if e]
+            if not eps:
+                continue
+            alias = self._line_name(line_flag) or "线路%d" % (len(play_from) + 1)
+            play_from.append(alias)
+            play_url.append("#".join(eps))
 
-                # 如果线路数与集数组数不一致, 用原始值兜底
-                if len(display_names) != len(url_list):
-                    self._dbg('line count mismatch: from=%d url=%d' % (len(from_list), len(url_list)))
-                    # 对齐: 缺少的部分用默认值
-                    while len(display_names) < len(url_list):
-                        display_names.append('线路%d' % (len(display_names) + 1))
-                    url_list = url_list[:len(display_names)]
-
-                vod['vod_play_from'] = '$$$'.join(display_names)
-                vod['vod_play_url'] = '$$$'.join(url_list)
+        # 兜底: vod_play_list 结构
+        if not play_from:
+            pl = info.get("vod_play_list")
+            if isinstance(pl, dict):
+                items = pl.values()
+            elif isinstance(pl, list):
+                items = pl
             else:
-                # 兜底
-                vod['vod_play_from'] = '默认'
-                vod['vod_play_url'] = '播放$' + vid
+                items = []
+            for ln in items:
+                if not isinstance(ln, dict):
+                    continue
+                urls = ln.get("urls") or ln.get("url") or []
+                if isinstance(urls, str):
+                    urls = [urls]
+                eps = []
+                for u in urls:
+                    if isinstance(u, dict):
+                        ep = self._clean(u.get("name") or u.get("title") or "")
+                        url = u.get("url") or u.get("origin") or ""
+                    else:
+                        ep, url = "", str(u)
+                    if not url:
+                        continue
+                    if not ep:
+                        ep = "第%d集" % (len(eps) + 1)
+                    eps.append("%s$%s" % (ep, self._fix_url(url)))
+                if eps:
+                    alias = self._line_name(ln.get("sid")) or "线路%d" % (len(play_from) + 1)
+                    play_from.append(alias)
+                    play_url.append("#".join(eps))
 
-            # 自检
-            n_from = len(vod['vod_play_from'].split('$$$'))
-            n_url = len(vod['vod_play_url'].split('$$$'))
-            self._dbg('detail OK: lines=%d episodes_groups=%d' % (n_from, n_url))
+        return play_from, play_url
 
-            result['list'].append(vod)
-        except Exception as e:
-            self._dbg('detailContent error:', e)
+    def playerContent(self, flag, id, vipFlags):
+        play_page = id if str(id).startswith("http") else self._fix_url(id)
+        self.log("player: " + play_page)
+        now = int(time.time())
+        if play_page in self._play_cache:
+            ts, res = self._play_cache[play_page]
+            if now - ts < 600:
+                return res
 
-        return result
+        if str(play_page).startswith("http") and (
+                ".m3u8" in play_page or ".mp4" in play_page):
+            res = {
+                "parse": 0, "playUrl": "", "url": play_page,
+                "header": {"User-Agent": UA, "Referer": self.site_url + "/"},
+            }
+            self._play_cache[play_page] = (now, res)
+            return res
 
-    # ============================================================================
-    # 九、playerContent: 拿到能播的真实地址
-    # ============================================================================
-    def playerContent(self, flag, id, vipFlags=''):
-        if not id:
-            return {'parse': 0, 'url': '', 'header': {}}
+        # 兜底: 嗅探播放页
+        res = {"parse": 1, "playUrl": "", "url": play_page,
+               "header": {"User-Agent": UA, "Referer": self.site_url + "/"}}
+        self._play_cache[play_page] = (now, res)
+        return res
 
-        play_url = id if str(id).startswith('http') else self.fixUrl(id)
-        header = {
-            'User-Agent': self.headers['User-Agent'],
-            'Referer': self.host + '/',
-        }
-
-        # m3u8 / mp4 直链 -> parse=0
-        if re.search(r'\.(m3u8|mp4)(\?|$)', play_url, re.I):
-            return {'parse': 0, 'url': play_url, 'jx': 0, 'header': header}
-
-        # 非 m3u8/mp4 链接, 尝试从播放页提取
+    def localProxy(self, param):
         try:
-            if _HAS_REQUESTS and self.session is not None:
-                r = self.session.get(play_url, timeout=self.TIMEOUT, verify=False)
-                if r and r.status_code == 200:
-                    html = r.text
-                    # 正则抠 m3u8
-                    for pat in [
-                        r'\burl\s*[:=]\s*["\']([^"\']+\.m3u8[^"\']*)["\']',
-                        r'\bsrc\s*[:=]\s*["\']([^"\']+\.m3u8[^"\']*)["\']',
-                        r'"(https?://[^"]+\.m3u8[^"]*)"',
-                    ]:
-                        m = re.search(pat, html, re.DOTALL)
-                        if m:
-                            return {'parse': 0, 'url': m.group(1), 'jx': 0, 'header': header}
-        except Exception as e:
-            self._dbg('playerContent extract error:', e)
+            url = ""
+            if isinstance(param, dict):
+                url = param.get("url", "")
+            else:
+                for pair in str(param).split("&"):
+                    if "=" in pair:
+                        k, v = pair.split("=", 1)
+                        if k == "url":
+                            url = v
+            if not url:
+                return [200, "image/jpeg", b"", ""]
+            url = urllib.parse.unquote(url) if "%" in url else url
+            url = self._fix_url(url)
+            rsp = self.fetch(url, headers={
+                "User-Agent": UA, "Referer": self.site_url + "/"}, timeout=15)
+            content = rsp.content
+            ctype = rsp.headers.get("Content-Type", "image/jpeg")
+            if not ctype.startswith("image/"):
+                ctype = "image/jpeg"
+            return [200, ctype, content, ""]
+        except Exception:
+            return [200, "image/jpeg", b"", ""]
 
-        # 交给壳解析
-        self._dbg('no direct link, parse=1:', play_url)
-        return {'parse': 1, 'url': play_url, 'jx': 0, 'header': header}
-
-    # ============================================================================
-    # 十、searchContent: 搜索
-    # ============================================================================
-    def searchContent(self, key, quick='', pg=1):
-        page = int(pg) if pg else 1
-        result = {'list': [], 'page': page, 'pagecount': 1, 'limit': 20, 'total': 0}
-        if not key:
-            return result
-
-        try:
-            resp = self._api_post('vod/search', {
-                'wd': key,
-                'page': page,
-                'token': '',
-            })
-            if not resp or resp.get('code') != 0:
-                self._dbg('vod/search error: code=%s msg=%s' % (resp.get('code', '?'), resp.get('msg', '')))
-                return result
-
-            videos = []
-            for item in resp.get('list', []):
-                videos.append({
-                    'vod_id': str(item.get('vod_id', '')),
-                    'vod_name': self.cleanText(item.get('vod_name', '')),
-                    'vod_pic': item.get('vod_pic', '') or item.get('vod_pic_thumb', ''),
-                    'vod_remarks': self.cleanText(item.get('vod_remarks', '')),
-                })
-
-            result['list'] = videos
-            result['pagecount'] = int(resp.get('pagecount', 1) or 1)
-            result['limit'] = int(resp.get('limit', len(videos)) or len(videos))
-            result['total'] = int(resp.get('total', len(videos)) or len(videos))
-        except Exception as e:
-            self._dbg('searchContent error:', e)
-
-        return result
-
-    def searchContentPage(self, key, quick='', page='1'):
-        return self.searchContent(key, quick, int(page) if page else 1)
-
-    # ============================================================================
-    # 十一、可选方法
-    # ============================================================================
     def isVideoFormat(self, url):
-        return False
+        return ".m3u8" in url or ".mp4" in url or url.startswith("http")
 
     def manualVideoCheck(self):
         return False
 
+    def destroy(self):
+        pass
 
-# ================================================================================
-# 本地自检
-# ================================================================================
-if __name__ == '__main__':
-    print('=' * 60)
-    print('果果短剧 TVBox Python 源 - 本地自检')
-    print('=' * 60)
-    print('base      :', _BASE_INFO)
-    print('requests  :', _HAS_REQUESTS)
-    print('crypto    :', _HAS_CRYPTO)
-    print('-')
-
-    s = Spider()
-    s.init('')
-
-    # 方法签名自检
-    required = ['init', 'getName', 'homeContent', 'categoryContent',
-                'detailContent', 'playerContent', 'searchContent']
-    for m in required:
-        print('method %-18s %s' % (m, 'OK' if hasattr(s, m) else 'MISSING!'))
-
-    print('-')
-    print('categories:', list(s.CATES.keys()))
-    print('line names:', s.LINE_NAMES)
-
-    # 分隔符自检
-    print('-')
-    play_from = '望望线路$$$魔都线路'
-    play_url = '01$https://a/1.m3u8#02$https://a/2.m3u8$$$01$https://b/1.m3u8#02$https://b/2.m3u8'
-    print('vod_play_from:', play_from)
-    print('vod_play_url :', play_url)
-
-    # 实际 API 测试
-    if _HAS_REQUESTS and _HAS_CRYPTO:
-        print('-')
-        print('=== Testing vod/search ===')
-        r = s.searchContent('总裁', '', 1)
-        print('search total:', r.get('total'), 'list:', len(r.get('list', [])))
-        if r['list']:
-            print('first:', r['list'][0])
-
-        print('-')
-        print('=== Testing categoryContent (短剧) ===')
-        r2 = s.categoryContent('1', '1', {}, {})
-        print('cat total:', r2.get('total'), 'list:', len(r2.get('list', [])))
-        if r2['list']:
-            print('first:', r2['list'][0])
-
-        print('-')
-        print('=== Testing detailContent ===')
-        if r2['list']:
-            vid = r2['list'][0]['vod_id']
-            r3 = s.detailContent([vid])
-            if r3['list']:
-                v = r3['list'][0]
-                print('name:', v.get('vod_name'))
-                pf = v.get('vod_play_from', '')
-                pu = v.get('vod_play_url', '')
-                print('play_from:', pf[:100])
-                print('play_url:', pu[:200])
-                lines = pf.split('$$$')
-                urls = pu.split('$$$')
-                print('line count:', len(lines), 'url groups:', len(urls))
-    else:
-        print('Skip API test (need requests + pycryptodome)')
-
-    print('=' * 60)
+    def close(self):
+        self.destroy()
