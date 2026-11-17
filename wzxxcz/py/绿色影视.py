@@ -6,10 +6,10 @@
   - 分类严格按站点主导航 5 个: 电影1 / 电视剧2 / 综艺3 / 动漫4 / 短剧26
   - 子分类（动作片5… / 大陆剧13…）作为「类型」筛选维度，不单独占分类
   - 分类列表 /frim/{tid}-{page}.html（48 条/页，page=1 省略）
-  - 筛选 /search.php?searchtype=5&tid=&area=&year=&yuyan=&order=&page=N
+  - 筛选 /search.php?searchtype=5&tid=&area=&year=&yuyan=&state=&order=&page=N
   - 详情 /movie/{id}.html，播放 /play/{id}-{sid}-{nid}.html
-  - 播放地址藏在 base64decode("...") 里，需解码
-  - 线路按 nav-tabs 出现顺序与 playlist 编号配对（编号顺序 ≠ 显示顺序）
+  - 播放地址藏在 base64decode("...") 里，需解码；分享页再抓 var main 拼回域名
+  - 线路按标签出现顺序与对应编号块配对（playlist{N} / player{N} 两套命名兼容）
 """
 import re
 import sys
@@ -99,6 +99,8 @@ FILTER_LANG = ["国语", "粤语", "英语", "日语", "韩语", "泰语", "法�
 
 FILTER_ORDER = [("时间", "time"), ("人气", "hit"), ("评分", "commend")]
 
+FILTER_STATE = [("完结", "w"), ("连载中", "l")]
+
 # ------------------------------------------------------------------ 正则
 _RE_THUMB_A = re.compile(r'<a\b[^>]*class="[^"]*myui-vodlist__thumb[^"]*"[^>]*>', re.I)
 _RE_PIC_TEXT = re.compile(r'<span class="pic-text[^"]*">([\s\S]*?)</span>', re.I)
@@ -108,9 +110,12 @@ _RE_ACTOR_P = re.compile(r'<p class="text[^"]*"[^>]*>([\s\S]*?)</p>', re.I)
 _RE_MID = re.compile(r'/movie/(\d+)\.html', re.I)
 _RE_RANK_LI = re.compile(r'<a class="top-line-dot[^"]*"\s+href="([^"]+)"[^>]*title="([^"]*)"', re.I)
 _RE_NUM = re.compile(r'<a class="btn btn-warm">\s*(\d+)\s*/\s*(\d+)\s*</a>')
-_RE_TAB = re.compile(r'<li><a href="#playlist(\d+)"[^>]*>([^<]*)</a></li>', re.I)
+# 站点两套线路命名并存：旧片 #playlist{N} / id="playlist{N}"，新片 #player{N} / id="player{N}"
+_RE_TAB = re.compile(
+    r'<li[^>]*>\s*<a\b[^>]*href="[^"]*#(playlist|player)(\d+)\s*"[^>]*>([\s\S]*?)</a></li>', re.I)
 _RE_HEAD = re.compile(r'<div class="myui-panel__head[^"]*"[^>]*>', re.I)
 _RE_NOW = re.compile(r'var\s+now\s*=\s*base64decode\("([^"]*)"\)', re.I)
+_RE_SHARE_MAIN = re.compile(r'var\s+main\s*=\s*"([^"]*)"', re.I)
 _RE_EXT = re.compile(r'\.(m3u8|mp4|flv|mkv|ts|avi|mov|rmvb|webm)(\?|#|$)', re.I)
 
 
@@ -138,6 +143,12 @@ def _pic(u):
     u = (u or "").strip()
     if not u:
         return DEFAULT_PIC
+    # 解包站点图片代理 /img.php?url=<直链>（代理会间歇 503，直链 CDN 更稳）
+    if "/img.php?" in u:
+        q = urllib.parse.urlparse(u)
+        target = urllib.parse.parse_qs(q.query).get("url", [None])[0]
+        if target:
+            u = target
     if u.startswith("//"):
         return "https:" + u
     if u.startswith("http"):
@@ -254,7 +265,12 @@ class Spider(Spider):
             if not name:
                 continue
             seen.add(vid)
-            pic = _attr(tag, "data-original") or _attr(tag, "data-src") or _attr(tag, "src")
+            pic = (_attr(tag, "data-original") or _attr(tag, "data-src")
+                   or _attr(tag, "src"))
+            if not pic:
+                sm = re.search(r'style="background:\s*url\(([^)]+)\)', tag, re.I)
+                if sm:
+                    pic = sm.group(1)
             rm = _RE_PIC_TEXT.search(seg)
             remark = _html(rm.group(1)) if rm else ""
             tg = _RE_PIC_TAG.search(seg)
@@ -326,6 +342,11 @@ class Spider(Spider):
                 fl.append({"key": "地区", "name": "地区", "value": vals})
 
                 vals = [{"n": "全部", "v": ""}]
+                for nm, ov in FILTER_STATE:
+                    vals.append({"n": nm, "v": ov})
+                fl.append({"key": "状态", "name": "状态", "value": vals})
+
+                vals = [{"n": "全部", "v": ""}]
                 for y in FILTER_YEAR:
                     vals.append({"n": y, "v": y})
                 fl.append({"key": "年份", "name": "年份", "value": vals})
@@ -362,28 +383,19 @@ class Spider(Spider):
                 continue
             heads.append((m.end() + t.end(), name))
 
-        groups = []
-        used = set()
+        videos = []
+        seen = set()
         for i, (start, name) in enumerate(heads):
             end = heads[i + 1][0] if i + 1 < len(heads) else len(h)
             block = h[start:end]
             items = self._cards(block)
-            extra = self._rank(block)
-            if extra:
-                have = set(x["vod_id"] for x in items)
-                for x in extra:
-                    if x["vod_id"] not in have:
-                        items.append(x)
-                        have.add(x["vod_id"])
-            if not items:
-                continue
-            gname = name
-            if gname in used:
-                gname = "%s %d" % (name, i + 1)
-            used.add(gname)
-            groups.append({"vod_name": gname, "vod_id": "", "vod_list": items})
+            for x in items:
+                if x["vod_id"] in seen:
+                    continue
+                seen.add(x["vod_id"])
+                videos.append(x)
 
-        return {"list": groups}
+        return {"list": videos}
 
     # ------------------------------------------------------------ 分类
     def _cat_url(self, tid, pg):
@@ -401,6 +413,8 @@ class Spider(Spider):
             params.append(("yuyan", ext["语言"]))
         if ext.get("排序"):
             params.append(("order", ext["排序"]))
+        if ext.get("状态"):
+            params.append(("state", ext["状态"]))
         if pg > 1:
             params.append(("page", str(pg)))
         qs = "&".join("%s=%s" % (k, urllib.parse.quote(str(v))) for k, v in params)
@@ -415,7 +429,7 @@ class Spider(Spider):
             tid = str(ext["类型"])
         ext.pop("类型", None)
 
-        use_search = bool(ext.get("地区") or ext.get("年份") or ext.get("语言") or ext.get("排序"))
+        use_search = bool(ext.get("地区") or ext.get("年份") or ext.get("语言") or ext.get("排序") or ext.get("状态"))
         if use_search:
             url = self._search_url(tid, ext, pg)
         else:
@@ -530,13 +544,13 @@ class Spider(Spider):
             content_body = "，".join(bits) if bits else "暂无简介"
         content = INTRO_PREFIX + "\n" + content_body
 
-        # 线路：nav-tabs 显示顺序 → 对应 playlist 编号块
+        # 线路：标签显示顺序 → 对应编号块（playlist{N} / player{N}）
         play_from = []
         play_url = []
         tabs = _RE_TAB.findall(h)
-        for num, label in tabs:
+        for prefix, num, label in tabs:
             label = _html(label) or ("线路%s" % num)
-            blk_m = re.search(r'<div id="playlist%s"[\s\S]*?</div>' % re.escape(num), h, re.I)
+            blk_m = re.search(r'<div id="%s%s"[\s\S]*?</div>' % (re.escape(prefix), re.escape(num)), h, re.I)
             if not blk_m:
                 continue
             blk = blk_m.group(0)
@@ -544,20 +558,13 @@ class Spider(Spider):
             if not um:
                 continue
             eps = []
-            for href, tx in re.findall(r'<a\b[^>]*href="([^"]*)"[^>]*title="([^"]*)"', um.group(1), re.I):
+            for a in re.finditer(r'<a\b[^>]*>([\s\S]*?)</a>', um.group(1), re.I):
+                tag = a.group(0)
+                href = _attr(tag, "href")
                 if "/play/" not in href:
                     continue
-                nm = _html(tx) or "播放"
+                nm = _html(_attr(tag, "title")) or _html(a.group(1)) or "播放"
                 eps.append("%s$%s" % (nm, href))
-            if not eps:
-                # 属性顺序不定的兜底
-                for a in re.finditer(r'<a\b[^>]*>([\s\S]*?)</a>', um.group(1), re.I):
-                    tag = a.group(0)
-                    href = _attr(tag, "href")
-                    if "/play/" not in href:
-                        continue
-                    nm = _html(_attr(tag, "title")) or _html(a.group(1)) or "播放"
-                    eps.append("%s$%s" % (nm, href))
             if not eps:
                 continue
             if label in play_from:
@@ -571,6 +578,7 @@ class Spider(Spider):
             "vod_pic": _pic(pic),
             "vod_remarks": remark,
             "type_name": cat,
+            "vod_classify": cat,
             "vod_year": year,
             "vod_area": area,
             "vod_lang": lang,
@@ -595,7 +603,6 @@ class Spider(Spider):
         else:
             url = HOST + "/play/%s.html" % s
         h = self._fetch(url)
-        header = json.dumps({"User-Agent": UA, "Referer": HOST + "/"})
 
         u = ""
         m = _RE_NOW.search(h or "")
@@ -613,12 +620,36 @@ class Spider(Spider):
                 except Exception:
                     u = ""
         if not u:
+            header = json.dumps({"User-Agent": UA, "Referer": HOST + "/"})
             return {"parse": 1, "playUrl": "", "url": url, "header": header}
 
         if u.startswith("//"):
             u = "https:" + u
+        # now 可能是 /share/<hash> 分享页：抓页面取 var main，拼回分享域名得到真实流地址
+        share_url = ""
+        if u.startswith("http") and not _RE_EXT.search(u):
+            sh = self._fetch(u)
+            mm = _RE_SHARE_MAIN.search(sh or "")
+            if mm:
+                share_url = u
+                main = mm.group(1).replace("\\/", "/")
+                pu = urllib.parse.urlparse(u)
+                host = pu.scheme + "://" + pu.netloc
+                u = host + main
         if not _RE_EXT.search(u):
             u = u.rstrip("/") + "/index.m3u8"
+
+        # 防盗链：分享线路沿用原始分享页地址作 Referer（贴近浏览器真实来源）；
+        # 直链线路跟随流地址自身域名；兜底站点域名
+        referer = share_url or HOST + "/"
+        if not share_url:
+            try:
+                pu = urllib.parse.urlparse(u)
+                if pu.scheme and pu.netloc:
+                    referer = pu.scheme + "://" + pu.netloc + "/"
+            except Exception:
+                pass
+        header = json.dumps({"User-Agent": UA, "Referer": referer})
         return {"parse": 0, "playUrl": "", "url": u, "header": header}
 
     # ------------------------------------------------------------ 搜索
@@ -634,7 +665,10 @@ class Spider(Spider):
         if pg > 1:
             url += "&page=%d" % pg
         h = self._fetch(url)
-        cards = self._cards(self._scope(h, r'<ul class="myui-vodlist clearfix"[^>]*>'))
+        scoped = self._scope(h, r'<ul class="myui-vodlist__media[^"]*"[^>]*>')
+        if scoped == h:
+            scoped = self._scope(h, r'<ul class="myui-vodlist clearfix"[^>]*>')
+        cards = self._cards(scoped)
         pc = self._pagecount(h, pg)
         if pg > pc:
             cards = []
