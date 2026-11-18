@@ -1223,10 +1223,19 @@
             "api": "./py/剧下饭4K.py"
         },
         {
-            "key": "米诺",
-            "name": "🍚米诺影视",
+            "key": "云播",
+            "name": "☁️云播影视",
             "type": 3,
-            "api": "csp_AppMN",
+            "api": "csp_AppYB",
+            "searchable": 1,
+            "quickSearch": 1,
+            "filterable": 1
+        },
+        {
+            "key": "未来",
+            "name": "💵未来影视",
+            "type": 3,
+            "api": "csp_AppWL",
             "searchable": 1,
             "quickSearch": 1,
             "filterable": 0
@@ -1299,10 +1308,10 @@
             "api": "./py/小蜜蜂影院.py"
         },
         {
-            "key": "洛雪TV",
-            "name": "⛄洛雪TV",
+            "key": "飞龙影院",
+            "name": "🐉飞龙影院",
             "type": 3,
-            "api": "./py/洛雪TV.py"
+            "api": "./py/飞龙影院.py"
         },
         {
             "key": "人人视频",
