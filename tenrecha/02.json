@@ -1,0 +1,288 @@
+// 荒野求生 · 图库维护（常驻，自动生成，别手改）
+
+// 1) 首次加载自动把已禁用安装包的内容跑一遍（新设备/清空图库时自动播种）
+
+// 2) 状态栏「重新导入底图」也调这里
+
+// 3) HD_VER 变化时强制换 URL 版本，刷新图片缓存
+
+// 不依赖 TavernHelper 的脚本开关 API（写卡会分叉），直接执行安装包内容。
+
+(function () {
+
+  var w = (window.parent && window.parent !== window) ? window.parent : window;
+
+  try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf('hy.bg.sky.') === 0) localStorage.removeItem(k); }); } catch (e) {}
+
+    // ===== 自动播种闸（每次改素材必看）=====
+
+  // autoImport() 的一次性开关是 hy.bg.auto.<AUTO_VER>.<图库文件夹>。
+
+  // 老玩家 localStorage 里这个 key 已是 1，函数进来就 return，安装包一行都不会执行。
+
+  // 只改安装包自己的 VER 是没有用的，必须同时把下面的 AUTO_VER 顶掉。
+
+  // 换素材的标准动作：
+
+  //   1) 安装包 M 里加/改条目，并升它自己的 VER；
+
+  //   2) 这里 AUTO_VER 一起升到同一版本号（要强刷图片缓存时 HD_VER 也升）；
+
+  //   3) 换了图就把文件名也换掉（如加 -v2），否则安装包会因"图库里已存在"而跳过上传。
+
+var AUTO_VER = '20261114f';
+
+  var HD_VER = '20261114f';
+
+  function flatten(a) {
+
+    var o = [];
+
+    (function walk(x) {
+
+      (x || []).forEach(function (t) {
+
+        if (!t) return;
+
+        if (t.scripts && t.scripts.length) walk(t.scripts);
+
+        else o.push(t);
+
+      });
+
+    })(a);
+
+    return o;
+
+  }
+
+  function folder() {
+
+    try {
+
+      var c = ((w && w.SillyTavern) || window.SillyTavern).getContext();
+
+      var chars = (c && c.characters) || [];
+
+      var id = c && (c.characterId != null ? c.characterId : c.this_chid);
+
+      var ch = chars[id];
+
+      if (!ch) return '';
+
+      var gs = c.extensionSettings && c.extensionSettings.gallery;
+
+      var custom = gs && gs.folders && ch.avatar ? gs.folders[ch.avatar] : '';
+
+      return String(custom || ch.name || '');
+
+    } catch (e) { return ''; }
+
+  }
+
+  function u(f) {
+
+    try {
+
+      var d = folder();
+
+      if (!d) return '';
+
+      var ver = localStorage.getItem('hy.bg.ver') || '1';
+
+      return '/user/images/' + encodeURIComponent(d) + '/' + encodeURIComponent(f) + '?v=' + encodeURIComponent(ver);
+
+    } catch (e) { return ''; }
+
+  }
+
+  function publishAssets() {
+
+    try {
+
+      var A = {
+
+        other: {
+
+          "地图": u('舆图-地上-背景.webp'),
+
+          "玩家-行囊": u('行囊-玩家.webp'),
+
+          "同伴-行囊": u('行囊-同伴.webp'),
+
+          "宠物-行囊": u('行囊-宠物.webp'),
+
+          "玩家-立绘": u('玩家-立绘.webp'),
+
+          "玩家-头像": u('玩家-头像.webp'),
+
+          "商店-材料1": u('商店-材料1-v2.webp'),
+
+          "商店-材料2": u('商店-材料2-v2.webp'),
+
+          "商店-材料3": u('商店-材料3-v2.webp'),
+
+          "商店-材料4": u('商店-材料4-v2.webp'),
+
+          "商店-材料-盲盒": u('商店-材料-盲盒-v2.webp'),
+
+          "商店-成品1": u('商店-成品1-v2.webp'),
+
+          "商店-成品2": u('商店-成品2-v2.webp'),
+
+          "商店-成品3": u('商店-成品3-v2.webp'),
+
+          "商店-成品4": u('商店-成品4-v2.webp'),
+
+          "商店-成品-盲盒": u('商店-成品-盲盒-v2.webp'),
+
+          "商店-角色1": u('商店-角色1-v2.webp'),
+
+          "商店-角色2": u('商店-角色2-v2.webp'),
+
+          "商店-角色3": u('商店-角色3-v2.webp'),
+
+          "商店-角色4": u('商店-角色4-v2.webp'),
+
+          "商店-角色5": u('商店-角色5-v2.webp'),
+
+          "商店-角色6": u('商店-角色6-v2.webp'),
+
+          "商店-角色7": u('商店-角色7-v2.webp'),
+
+          "商店-角色-信物": u('商店-角色-信物-v2.webp')
+
+        }
+
+      };
+
+      w.__HUANGYE_ASSETS = A;
+
+      w.huangyeAssets = function () { return Promise.resolve(A); };
+
+      w.__HY_MAP_UNDER = u('舆图-地下-背景.webp');
+
+    } catch (e) {}
+
+  }
+
+  function reimport() {
+
+    try {
+
+      // 手动「重新导入」要能把被删掉/漏掉的素材补回来：先清安装包的一次性闸。
+      // 不清的话，安装包 run() 看到 hy.bg.seed.*=1 会直接 return，缺图也补不回来。
+      try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf('hy.bg.seed.') === 0) localStorage.removeItem(k); }); } catch (e) {}
+
+      var TH = window.TavernHelper || w.TavernHelper;
+
+      if (!TH || typeof TH.getScriptTrees !== 'function') { console.error('[图库] TavernHelper API 不可用'); return 0; }
+
+      var trees = TH.getScriptTrees({ type: 'character' });
+
+      var list = flatten(trees).filter(function (s) { return s.content && /^\s*\/\*\s*HY_GALLERY_INSTALLER:/.test(s.content); });
+
+      var ran = 0;
+
+      list.forEach(function (s) {
+
+        try {
+
+          new Function(s.content)();
+
+          ran++;
+
+        } catch (e) { console.error('[图库] 执行 ' + s.name + ' 失败', e); }
+
+      });
+
+      console.log('[图库] 已执行安装包 ' + ran + ' 个');
+
+      return ran;
+
+    } catch (e) { console.error('[图库] 重新导入失败', e); return 0; }
+
+  }
+
+  function autoImport() {
+
+    try {
+
+      var f = folder();
+
+      if (!f) return;
+
+      var key = 'hy.bg.auto.' + AUTO_VER + '.' + encodeURIComponent(f);
+
+      if (localStorage.getItem(key) === '1') return;
+
+      localStorage.setItem(key, '1');
+
+      Object.keys(localStorage).forEach(function (k) { if (k.indexOf('hy.bg.seed.') === 0) localStorage.removeItem(k); });
+
+      w.__HY_BG_REIMPORTING = true;
+
+      var n = reimport();
+
+      console.log('[图库] 首次自动导入：' + n + ' 个安装包');
+
+      window.setTimeout(function () { try { w.__HY_BG_REIMPORTING = false; } catch (e) {} }, 30000);
+
+    } catch (e) { console.error('[图库] 自动导入失败', e); }
+
+  }
+
+  function bustCache() {
+
+    try {
+
+      if (localStorage.getItem('hy.hd.ver') === HD_VER) return;
+
+      localStorage.setItem('hy.hd.ver', HD_VER);
+
+      localStorage.setItem('hy.bg.ver', String(Date.now()));
+
+      publishAssets();
+
+      try { if (w.__HY_BG_REFRESH) w.__HY_BG_REFRESH(); } catch (e) {}
+
+    } catch (e) {}
+
+  }
+
+  try { w.__HY_GALLERY_REIMPORT = reimport; } catch (e) {}
+
+  try { w.__HY_GALLERY_PUBLISH = publishAssets; } catch (e) {}
+
+  publishAssets();
+
+  window.setTimeout(publishAssets, 700);
+
+  window.setTimeout(publishAssets, 2000);
+
+  window.setTimeout(autoImport, 1800);
+
+  window.setTimeout(bustCache, 2400);
+
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
