@@ -3299,5 +3299,254 @@
       "url": "href"
     },
     "_note": "播放可能需二次解析 player js"
+  },
+  {
+    "name": "📺girigiri动漫",
+    "api": "https://bg.girigirilove.com",
+    "type": 2,
+    "searchable": true,
+    "removeReferer": false,
+    "header": {
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+      "Referer": "https://bg.girigirilove.com/",
+      "Accept-Language": "zh-CN,zh;q=0.9"
+    },
+    "categories": [
+      {
+        "name": "日番",
+        "url": "/show/2--------{{page}}---/",
+        "url2": "/show/2--------1---/"
+      },
+      {
+        "name": "美番",
+        "url": "/show/3--------{{page}}---/",
+        "url2": "/show/3--------1---/"
+      },
+      {
+        "name": "劇場版",
+        "url": "/show/21--------{{page}}---/",
+        "url2": "/show/21--------1---/"
+      },
+      {
+        "name": "真人番劇",
+        "url": "/show/20--------{{page}}---/",
+        "url2": "/show/20--------1---/"
+      },
+      {
+        "name": "BD副音軌",
+        "url": "/show/24--------{{page}}---/",
+        "url2": "/show/24--------1---/"
+      }
+    ],
+    "list": {
+      "list": "a.public-list-exp, a[href*='/GV']",
+      "name": "img@alt||@title||text",
+      "tips": ".public-list-prb@text",
+      "coverUrl": "img@data-src||img@src",
+      "detailUrl": "href"
+    },
+    "search": {
+      "url": "/search/-------------.html?wd={{key}}",
+      "list": "a.public-list-exp, a[href*='/GV']",
+      "name": "img@alt||@title||text",
+      "coverUrl": "img@data-src||img@src",
+      "detailUrl": "href"
+    },
+    "detail": {
+      "meta": "title@text||h1@text"
+    },
+    "play": {
+      "list": "a[href*='/playGV'], video, source",
+      "name": "text||title||播放",
+      "url": "href||data-hls-src||data-fallback-src||src||data-src"
+    },
+    "toc": {
+      "list": "a[href*='/playGV'], video, source",
+      "name": "text||title||播放",
+      "url": "href||data-hls-src||data-fallback-src||src||data-src"
+    }
+  },
+  {
+    "name": "📺爱果短剧",
+    "api": "https://aigo.me",
+    "type": 2,
+    "searchable": true,
+    "removeReferer": false,
+    "header": {
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+      "Referer": "https://aigo.me/",
+      "Accept-Language": "zh-CN,zh;q=0.9"
+    },
+    "categories": [
+      {
+        "name": "首页",
+        "url": "/",
+        "url2": "/"
+      },
+      {
+        "name": "热门",
+        "url": "/rank/hot-drama",
+        "url2": "/rank/hot-drama"
+      },
+      {
+        "name": "最新",
+        "url": "/rank/new-drama",
+        "url2": "/rank/new-drama"
+      }
+    ],
+    "list": {
+      "list": "a[href*='/drama/']",
+      "name": "img@alt||@title||text",
+      "tips": "",
+      "coverUrl": "img@src||img@data-src",
+      "detailUrl": "href"
+    },
+    "search": {
+      "url": "/search?q={{key}}",
+      "list": "a[href*='/drama/']",
+      "name": "img@alt||@title||text",
+      "coverUrl": "img@src||img@data-src",
+      "detailUrl": "href"
+    },
+    "detail": {
+      "meta": "title@text||h1@text"
+    },
+    "play": {
+      "list": "a[href*='/play/'][href*='episodeId'], a[href*='/play/']",
+      "name": "text||title||播放",
+      "url": "href"
+    },
+    "toc": {
+      "list": "a[href*='/play/'][href*='episodeId'], a[href*='/play/']",
+      "name": "text||title||播放",
+      "url": "href"
+    }
+  },
+  {
+    "name": "📺橙果短剧",
+    "api": "https://chengguodj.com",
+    "type": 2,
+    "searchable": true,
+    "removeReferer": false,
+    "header": {
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+      "Referer": "https://chengguodj.com/",
+      "Accept-Language": "zh-CN,zh;q=0.9"
+    },
+    "categories": [
+      {
+        "name": "全部",
+        "url": "/browse/page-{{page}}",
+        "url2": "/browse"
+      },
+      {
+        "name": "真人短剧",
+        "url": "/zhenren/page-{{page}}",
+        "url2": "/zhenren"
+      },
+      {
+        "name": "原创",
+        "url": "/yuanchuang/page-{{page}}",
+        "url2": "/yuanchuang"
+      },
+      {
+        "name": "魔改",
+        "url": "/mogai/page-{{page}}",
+        "url2": "/mogai"
+      },
+      {
+        "name": "漫剧",
+        "url": "/manju/page-{{page}}",
+        "url2": "/manju"
+      },
+      {
+        "name": "AI短剧",
+        "url": "/aiduanju/page-{{page}}",
+        "url2": "/aiduanju"
+      }
+    ],
+    "list": {
+      "list": "a[href*='/drama/']",
+      "name": "img@alt||@title||text",
+      "tips": "",
+      "coverUrl": "img@src||img@data-src",
+      "detailUrl": "href"
+    },
+    "search": {
+      "url": "/search/{{key}}",
+      "list": "a[href*='/drama/']",
+      "name": "img@alt||@title||text",
+      "coverUrl": "img@src||img@data-src",
+      "detailUrl": "href"
+    },
+    "detail": {
+      "meta": "title@text||h1@text"
+    },
+    "play": {
+      "list": "a[href*='/play/'], video",
+      "name": "text||title||播放",
+      "url": "href||data-hls-src||data-fallback-src||src||data-src"
+    },
+    "toc": {
+      "list": "a[href*='/play/'], video",
+      "name": "text||title||播放",
+      "url": "href||data-hls-src||data-fallback-src||src||data-src"
+    }
+  },
+  {
+    "name": "🍉69吃瓜网",
+    "api": "https://69cgua.com",
+    "type": 2,
+    "searchable": true,
+    "removeReferer": false,
+    "header": {
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+      "Referer": "https://69cgua.com/",
+      "Accept-Language": "zh-CN,zh;q=0.9"
+    },
+    "categories": [
+      {
+        "name": "首页",
+        "url": "/page/{{page}}/",
+        "url2": "/"
+      },
+      {
+        "name": "黑料",
+        "url": "/category/heiliaomen/page/{{page}}/",
+        "url2": "/category/heiliaomen/"
+      },
+      {
+        "name": "热搜",
+        "url": "/category/resou/page/{{page}}/",
+        "url2": "/category/resou/"
+      }
+    ],
+    "list": {
+      "list": "a[href*='/archives/']",
+      "name": "img@alt||@title||h2@text||text",
+      "tips": "time@text||.date@text",
+      "coverUrl": "img@data-src||img@data-original||img@src",
+      "detailUrl": "href"
+    },
+    "search": {
+      "url": "/?s={{key}}",
+      "list": "a[href*='/archives/']",
+      "name": "img@alt||@title||h2@text||text",
+      "coverUrl": "img@data-src||img@src",
+      "detailUrl": "href"
+    },
+    "detail": {
+      "meta": "title@text||h1@text"
+    },
+    "play": {
+      "list": "video, source, a[href*='.m3u8'], a[href*='.mp4']",
+      "name": "播放",
+      "url": "data-hls-src||data-fallback-src||src||data-src||href"
+    },
+    "toc": {
+      "list": "video, source, a[href*='.m3u8'], a[href*='.mp4']",
+      "name": "播放",
+      "url": "data-hls-src||data-fallback-src||src||data-src||href"
+    }
   }
 ]

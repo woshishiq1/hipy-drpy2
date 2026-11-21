@@ -1423,11 +1423,21 @@
             "api": "./py/金牌蓝兔子.py"
         },
         {
+            "key": "厂长影视",
+            "name": "🍊厂长影视",
+            "type": 3,
+            "api": "csp_Czsapp",
+            "searchable": 1,
+            "quickSearch": 1,
+            "filterable": 1,
+            "ext": "https://cz01.vip/"
+        },
+        {
             "key": "金牌影视",
             "name": "🏅金牌影视",
             "type": 3,
             "api": "csp_Jpys",
-            "ext": "https://y2s52n7.com,https://m.hkybqufgh.com,https://m.sizhengxt.com,https://m.9zhoukj.com,https://m.sizhengxt.com,https://m.jiabaide.cn"
+            "ext": "https://www.sunnafh.com,https://m.sizhengxt.com,https://m.jiabaide.cn"
         },
         {
             "key": "看看鸭",
@@ -1785,12 +1795,6 @@
             "api": "./py/晴天影视2.py"
         },
         {
-            "key": "两个BT影视",
-            "name": "🍊两个BT影视",
-            "type": 3,
-            "api": "./py/两个BT影视.py"
-        },
-        {
             "key": "看看剧",
             "name": "🍊看看剧",
             "type": 3,
@@ -1935,6 +1939,25 @@
             "quickSearch": 0,
             "filterable": 0,
             "changeable": 0
+        },
+        {
+            "key": "师兄",
+            "name": "💡师兄影视1",
+            "type": 3,
+            "api": "csp_AppV7",
+            "ext": {
+                "host": "http://app2.dsx.ac/ndsx.php",
+                "version": "4.0.6",
+                "version_number": "4006",
+                "pk_id": "com.qdsj.zxt.hzjc",
+                "build_time": "1790053427039",
+                "sign_md5": "56a4bb80bd67422e9c5b48f003d445c8",
+                "apk_length": "59954699",
+                "platform": "",
+                "platform_version": "TP1A.220624.014",
+                "user_agent": "Dart/3.11 (dart:io)",
+                "private_key": "MIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAO9omsi+ys7fmBH3w1d0DfvRAQlj0wLB1BI3Xsb9WSiu4lEc1Me+XubnzTxaQPCBbnuZURerRrO981n9GhsQkDcWmtW+X1mpCllOWt8bbnWwKPsHqemRFxncDWE/d0nA9yrZn6nLVy/J7DJ3cVJlIs9bNLArqEiR8KVrAf1PNSLXAgMBAAECgYBGPn3z2q8s5cP7uaOSHFYiBZ/1PlniXDa6JY7ked9YJX/35qqz9LJps6evRpf5OTDOiRyXAkUbZedqBu5K9KArSGVyxp/Vym4b0siEVeM8qq9Gbf74lHPH+L+X/NmXemydwZHR1lU9PiLJVMsh8o6aAazkB8ijZcsNMyYZUSH36QJBAPvHq511Uz45lx5BtVSZClcUnqPRFSmNnRdjATikDzFTObemnGJU3eL/7VIPWtjEj9LvGP/WyX6gyo1zKc8BRtUCQQDza9oFnSmMHPkvrll/zMxcy3FeOTW0hctBhdIMbBmjJJyhlfTmBOvxwm8I91F05ydkSZ1yLuLhAjLxbjqs2fD7AkB/KOHQvW+UTqu22ULGfiCNyFkyrSc9/EqphBQa0ijmJX1R9nCm7Ou/eLgYKK8eKW/l/WGn3IeZT4XdGJu185QdAkBthqmivQRktuSoP5qlllCdsCxiaPtxLoI2CTBpxnoCngab7g0zMiO3s/Sh5CYSo69lwHnHVrFe7M5fM2nTPHzhAkEAiJETUvYFwCVKNGTYMzUg7v3QblqYXB+IhzcU37sHZOn6a46V5eJDadavIvuEmoxJHWTybi+1ZkN7LeUUg4ylCw=="
+            }
         },
         {
             "key": "剧圈99",
@@ -2091,7 +2114,10 @@
             "key": "韩圈",
             "name": "🥯韩圈影视",
             "type": 3,
-            "api": "csp_Hxq"
+            "api": "csp_Hxq",
+            "searchable": 1,
+            "quickSearch": 1,
+            "filterable": 1
         },
         {
             "key": "乌云影视",
@@ -35786,6 +35812,12 @@
             "name": "🌸花子动漫",
             "type": 3,
             "api": "csp_AnimeHuazi"
+        },
+        {
+            "key": "漫国动漫",
+            "name": "🤣漫国动漫",
+            "type": 3,
+            "api": "csp_AnimeGHG"
         },
         {
             "key": "红果短剧",
