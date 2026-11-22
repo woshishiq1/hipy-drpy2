@@ -3548,5 +3548,148 @@
       "name": "播放",
       "url": "data-hls-src||data-fallback-src||src||data-src||href"
     }
+  },
+  {
+    "name": "📺172MixDJ",
+    "api": "https://www.172mixdj.com",
+    "type": 2,
+    "searchable": true,
+    "removeReferer": false,
+    "header": {
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+      "Referer": "https://www.172mixdj.com/",
+      "Accept-Language": "zh-CN,zh;q=0.9"
+    },
+    "categories": [
+      {
+        "name": "中文MV舞曲",
+        "url": "/categories/zwmv?page={{page}}",
+        "url2": "/categories/zwmv"
+      },
+      {
+        "name": "英文MV舞曲",
+        "url": "/categories/ywmv?page={{page}}",
+        "url2": "/categories/ywmv"
+      },
+      {
+        "name": "中文MV串烧",
+        "url": "/categories/zwcs?page={{page}}",
+        "url2": "/categories/zwcs"
+      },
+      {
+        "name": "英文MV串烧",
+        "url": "/categories/ywcs?page={{page}}",
+        "url2": "/categories/ywcs"
+      },
+      {
+        "name": "视频专辑",
+        "url": "/albums?page={{page}}",
+        "url2": "/albums"
+      },
+      {
+        "name": "排行榜单",
+        "url": "/ranks",
+        "url2": "/ranks"
+      },
+      {
+        "name": "最新上传",
+        "url": "/",
+        "url2": "/"
+      }
+    ],
+    "list": {
+      "list": "a[href*='/videos/'], a.post-permalink",
+      "name": "title||img@alt||h2@text||text",
+      "tips": ".video-length@text||.badge@text||.post-meta__views@text",
+      "coverUrl": "img@data-src||img@data-original||img@src",
+      "detailUrl": "href"
+    },
+    "search": {
+      "url": "/searches?s={{key}}",
+      "list": "a[href*='/videos/'], a.post-permalink",
+      "name": "title||img@alt||h2@text||text",
+      "tips": ".video-length@text||.badge@text",
+      "coverUrl": "img@data-src||img@data-original||img@src",
+      "detailUrl": "href"
+    },
+    "detail": {
+      "meta": "h1@text||title@text"
+    },
+    "play": {
+      "list": "body@js:function getPlay(html){var r=[],m=html.match(/url:\\s*[\"'](https?:\\/\\/[^\"']+\\.mp4[^\"']*)[\"']/i);if(m)r.push({name:'正片',url:m[1]});if(!r.length){m=html.match(/src=[\"'](https?:\\/\\/[^\"']+\\.mp4[^\"']*)[\"']/i);if(m)r.push({name:'正片',url:m[1]});}if(!r.length){m=html.match(/(https?:\\/\\/djmp4\\.172mix\\.com\\/[^\"'\\s<>]+\\.mp4)/i);if(m)r.push({name:'正片',url:m[1]});}return r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "name": "$.name",
+      "url": "$.url"
+    },
+    "toc": {
+      "list": "body@js:function getPlay(html){var r=[],m=html.match(/url:\\s*[\"'](https?:\\/\\/[^\"']+\\.mp4[^\"']*)[\"']/i);if(m)r.push({name:'正片',url:m[1]});if(!r.length){m=html.match(/src=[\"'](https?:\\/\\/[^\"']+\\.mp4[^\"']*)[\"']/i);if(m)r.push({name:'正片',url:m[1]});}if(!r.length){m=html.match(/(https?:\\/\\/djmp4\\.172mix\\.com\\/[^\"'\\s<>]+\\.mp4)/i);if(m)r.push({name:'正片',url:m[1]});}return r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "name": "$.name",
+      "url": "$.url"
+    },
+    "_note": "172Mix DJ舞曲MV视频网，来自172mixdj.js / 172mixdj.py",
+    "_js": "172mixdj.js"
+  },
+  {
+    "name": "📺黄桃短剧",
+    "api": "https://aihuangdou.com",
+    "type": 2,
+    "searchable": true,
+    "removeReferer": false,
+    "header": {
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+      "Referer": "https://aihuangdou.com/",
+      "Accept-Language": "zh-CN,zh;q=0.9"
+    },
+    "categories": [
+      {
+        "name": "AI短剧",
+        "url": "/ai-duanju/{{page}}/",
+        "url2": "/ai-duanju/"
+      },
+      {
+        "name": "AI漫剧",
+        "url": "/ai-manju/{{page}}/",
+        "url2": "/ai-manju/"
+      },
+      {
+        "name": "AI魔改",
+        "url": "/ai-mogai/{{page}}/",
+        "url2": "/ai-mogai/"
+      },
+      {
+        "name": "AI美女",
+        "url": "/ai-meinv/{{page}}/",
+        "url2": "/ai-meinv/"
+      }
+    ],
+    "list": {
+      "list": "article.drama-card, a[href*='/drama/']",
+      "name": "h3@text||img@alt||@title||text",
+      "tips": "text:contains(集)||.episode@text",
+      "coverUrl": "img@data-src||img@src",
+      "detailUrl": "href||a@href"
+    },
+    "search": {
+      "url": "/search/video/{{key}}/",
+      "list": "article.drama-card, a[href*='/drama/']",
+      "name": "h3@text||img@alt||@title||text",
+      "coverUrl": "img@data-src||img@src",
+      "detailUrl": "href||a@href"
+    },
+    "detail": {
+      "meta": "h1@text||title@text||.description@text"
+    },
+    "play": {
+      "list": "a[href*='/video/'], video",
+      "name": "text||title||第{{index}}集",
+      "url": "href||data-hls-src||data-src||src"
+    },
+    "toc": {
+      "list": "a[href*='/video/']",
+      "name": "text||title",
+      "url": "href"
+    },
+    "_js": "aihuangdou.js",
+    "_note": "黄桃短剧，对应 aihuangdou.js / spider.py"
+
   }
 ]

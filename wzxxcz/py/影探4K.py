@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 影探4K (cms.lyyytv.cn) | TVBox Python 爬虫 
-由 影探4k.js 移植，风格对齐豆花电影网 Spider
   - Session 连接池 + verify=False + 重试退避
-  - 解析接口 fys.lyyytv.cn (parsesId=3) → https://baidu.con/ 前缀 AES/CBC 解密
+  - 解析接口 fys.lyyytv.cn (parsesId=6，旧 3 已被后台删除) → https://baidu.con/ 前缀 AES/CBC 解密
   - 兼容 lvdou+ / ldmax.cooom 两种老加密前缀
   - 解析结果缓存 + 首页缓存 + 防御式解析
 用法：把本文件放到手机 /sdcard/py/影探4K.py，站点配置 api 填 file:///sdcard/py/影探4K.py
@@ -58,13 +57,32 @@ import requests
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 
+# 模块级连接池 Session（verify=False），任一环节异常回退裸 requests，双保险
+_http_session = None
+
+
+def _http_get(url, headers=None, timeout=15, **kw):
+    global _http_session
+    try:
+        if _http_session is None:
+            _http_session = requests.Session()
+            _http_session.verify = False
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=10, pool_maxsize=10, max_retries=0)
+            _http_session.mount('https://', adapter)
+            _http_session.mount('http://', adapter)
+        return _http_session.get(url, headers=headers, timeout=timeout,
+                                 verify=False, **kw)
+    except Exception:
+        return requests.get(url, headers=headers, timeout=timeout, **kw)
+
 # ===================== 常量 =====================
 KEY = 'yingtan4k'
 HOST = 'http://cms.lyyytv.cn'
 CMS_KEY = 'wP5bvxoc3yv7FoBQENFZuAF0EUYr4LTy'
 
-# 解析接口（对齐 yt4k.js：fys.lyyytv.cn / parsesId=3）
-PARSE_API = 'http://fys.lyyytv.cn/api/index?parsesId=3&appid=10001&videoUrl='
+# 解析接口（fys.lyyytv.cn；parsesId 3 已被后台删除，实测当前有效线路为 6）
+PARSE_API = 'http://fys.lyyytv.cn/api/index?parsesId=6&appid=10001&videoUrl='
 HEADERS = {'User-Agent': 'okhttp/4.12.0'}
 # 解析请求/回源头：对齐 JS 的 PH，避免 gzip 花屏
 PARSE_HEADERS = {'User-Agent': 'okhttp/4.12.0', 'Accept-Encoding': 'identity'}
@@ -86,12 +104,12 @@ HOME_CACHE_TTL = 6 * 3600
 
 INTRO_PREFIX = '🍊小橙子为您介绍剧情👉请不要相信视频中的广告，以免上当受骗！'
 
-# 与真实网站顶部导航栏完全一致的主分类（其余 ①②③ 为站内下拉子页，不在 TVBox 展示）
-SITE_TABS = ['1', '21', '3', '25', '56', '22', '23', '24', '29']
+# 导航以后端 nav 接口为准：动态读取，剔除无名项与 ①②③④⑤ 圈码分组子页
 
 _BASE64_RE = re.compile(r'(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?')
 _LDMAX_RE = re.compile(r'^https?://ldmax\.cooom/', re.I)
 _MEDIA_RE = re.compile(r'\.(?:mp4|m3u8?|flv|avi|mkv|ts|mov|wmv|webm|m4v|mpd)$', re.I)
+_CIRCLED_RE = re.compile(r'[①②③④⑤⑥⑦⑧⑨⑩]')
 
 # ===================== 模块级缓存 =====================
 _home_cache = {}
@@ -127,7 +145,7 @@ def object_of(value):
 
 def get_json(url, headers=None, timeout=15):
     headers = HEADERS if headers is None else headers
-    rsp = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+    rsp = _http_get(url, headers=headers, timeout=timeout, allow_redirects=True)
     try:
         data = object_of(rsp.json())
     except Exception:
@@ -306,7 +324,7 @@ def parse_url(raw):
         if rnd > 0:
             time.sleep(rnd * PARSE_BACKOFF)
         try:
-            rsp = requests.get(target, headers=PARSE_HEADERS, timeout=30)
+            rsp = _http_get(target, headers=PARSE_HEADERS, timeout=30)
             if rsp.status_code == 200 and rsp.text:
                 resolved = resolve_parse(rsp.text)
                 if resolved and resolved.startswith('http'):
@@ -334,11 +352,10 @@ def home(extend=''):
     for item in list_of(data.get('list')):
         if not isinstance(item, dict):
             continue
-        if item.get('type_id') is None or not text(item.get('type_name')):
+        name = text(item.get('type_name'))
+        if item.get('type_id') is None or not name or _CIRCLED_RE.search(name):
             continue
         tid = text(item['type_id'])
-        if tid not in SITE_TABS:
-            continue
         classes.append({'type_id': tid, 'type_name': text(item['type_name'])})
         ext = object_of(item.get('type_extend'))
         groups = []
@@ -484,7 +501,7 @@ def play(play_id):
     """对齐 JS play：无条件走解析接口，解出真实地址再交播放器。"""
     original = decrypt_lvdou(play_id)
     if not original:
-        return {'parse': 0, 'url': '', 'header': dict(PARSE_HEADERS)}
+        return {'parse': 1, 'playUrl': '', 'url': '', 'header': dict(PARSE_HEADERS)}
 
     # 兼容老加密：ldmax 前缀先本地解密
     if is_ldmax_url(original):
@@ -496,13 +513,15 @@ def play(play_id):
     now = time.time()
     cached = _play_cache.get(original)
     if cached and cached[0] > now:
-        return {'parse': 0, 'url': cached[1], 'header': dict(PARSE_HEADERS)}
+        return {'parse': 0, 'playUrl': '', 'url': cached[1], 'header': dict(PARSE_HEADERS)}
 
     resolved = parse_url(original)
     if resolved:
         _play_cache[original] = (now + PLAY_CACHE_TTL, resolved)
+        return {'parse': 0, 'playUrl': '', 'url': resolved, 'header': dict(PARSE_HEADERS)}
 
-    return {'parse': 0, 'url': resolved or '', 'header': dict(PARSE_HEADERS)}
+    fallback = original if original.startswith('http') else ''
+    return {'parse': 1, 'playUrl': '', 'url': fallback, 'header': dict(PARSE_HEADERS)}
 
 
 # ===================== Spider 类 =====================
@@ -523,12 +542,8 @@ class Spider(Spider):
         if self._warmed:
             return
         try:
-            if hasattr(self, '_sess'):
-                self._sess.get(HOST + '/api.php/app/nav?token=',
-                               headers=HEADERS, timeout=10)
-            else:
-                requests.get(HOST + '/api.php/app/nav?token=',
-                             headers=HEADERS, timeout=10)
+            _http_get(HOST + '/api.php/app/nav?token=',
+                      headers=HEADERS, timeout=10)
             self._warmed = True
             self.log("预热完成")
         except Exception as e:
@@ -542,11 +557,19 @@ class Spider(Spider):
 
     def homeContent(self, filter=False):
         self._warm_up()
-        return home(self.extend if isinstance(self.extend, str) else '')
+        try:
+            return home(self.extend if isinstance(self.extend, str) else '')
+        except Exception as e:
+            self.log('homeContent 异常:', e)
+            return {'class': [], 'filters': {}}
 
     def homeVideoContent(self):
         self._warm_up()
-        return home_vod()
+        try:
+            return home_vod()
+        except Exception as e:
+            self.log('homeVideoContent 异常:', e)
+            return {'list': []}
 
     def categoryContent(self, tid, pg, filter, extend):
         self._warm_up()
@@ -555,21 +578,49 @@ class Spider(Spider):
                 extend = json.loads(extend) if extend else {}
             except Exception:
                 extend = {}
-        return category(tid, pg, extend)
+        try:
+            return category(tid, pg, extend)
+        except Exception as e:
+            self.log('categoryContent 异常:', e)
+            return {'list': [], 'page': 1, 'pagecount': 1, 'limit': 20, 'total': 0}
 
     def detailContent(self, ids):
-        return detail(ids)
+        try:
+            return detail(ids)
+        except Exception as e:
+            self.log('detailContent 异常:', e)
+            return {'list': []}
 
     def searchContent(self, key, quick, pg='1'):
         self._warm_up()
-        return search(key, pg)
+        try:
+            return search(key, pg)
+        except Exception as e:
+            self.log('searchContent 异常:', e)
+            return {'list': [], 'page': 1, 'pagecount': 1, 'limit': 20, 'total': 0}
 
     def searchContentPage(self, key, quick, pg='1'):
         return self.searchContent(key, quick, pg)
 
+    def log(self, *a, **kw):
+        try:
+            parts = []
+            for x in a:
+                if isinstance(x, (dict, list)):
+                    parts.append(json.dumps(x, ensure_ascii=False))
+                else:
+                    parts.append(str(x))
+            print('[yingtan4k]', ' '.join(parts))
+        except Exception:
+            pass
+
     def playerContent(self, flag, id, vipFlags):
-        self.log("player: flag=%s id=%s" % (flag, text(id)[:120]))
-        return play(id)
+        try:
+            self.log("player: flag=%s id=%s" % (flag, text(id)[:120]))
+            return play(id)
+        except Exception as e:
+            self.log('playerContent 异常兜底:', e)
+            return {'parse': 1, 'playUrl': '', 'url': '', 'header': dict(PARSE_HEADERS)}
 
     def localProxy(self, param):
         try:
