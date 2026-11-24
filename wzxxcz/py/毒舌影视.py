@@ -1,54 +1,67 @@
 # coding=utf-8
 """
-毒舌影视 www.cssgm.com.cn | TVBox Python 爬虫
-站点模板: MacCMS stui / hl048
+m.xnhrsb.com | TVBox Python 爬虫
+站点: 毒舌影视（MacCMS stui 模板 dsshiyi，移动端 m 站）
+线上实证：首页/电影/电视剧列表/详情(单集合集+多集连续剧)/播放页/搜索结果/筛选区落盘核对。
 
-路由（实证自列表/搜索/详情/播放源码）:
-  - 首页:   /
-  - 主分类: /cat/<tid>.html；分页 /cat/<tid>-<page>.html（第 1 页无 -1）
-  - 子类型: /list/id/<subtype>.html
-  - 剧情:   /list/class/<URL编码中文>/id/<tid>.html
-  - 地区:   /list/area/<URL编码中文>/id/<tid>.html（地区+剧情: /list/area/<a>/class/<c>/id/<tid>.html）
-  - 年份:   /list/id/<tid>/year/<年>.html（叠加剧情: /list/class/<c>/id/<tid>/year/<年>.html）
-  - 语言:   /list/class/<c>/id/<tid>/lang/<URL编码中文>.html（裸分类: /list/id/<tid>/lang/<中文>.html）
-  - 字母:   /list/class/<c>/id/<tid>/letter/<A-Z 或 0-9>.html
-  - 排序:   /list/by/time|hits|score/class/<c>/id/<tid>.html
-  - 筛选分页: /list/class/<c>/id/<tid>/page/<page>.html
-  - 详情:   /cinema/<id>.html
-  - 播放:   /view/<vid>/<sid>/<nid>.html
-  - 搜索:   /so.html?wd=<关键词>；分页 /so/page/<page>/wd/<编码关键词>.html
+已实证路由（audit/xnhrsb 样本）:
+  - 首页:     /
+  - 主分类:   /dsshiyitp/<tid>.html
+  - 分页/筛选: /dsshiyisw/<tid>-<area>-<order>-<class>-<lang>-<letter>--<page>--<year>.html
+              12 槽位: 0=tid 1=地区 2=排序 3=类型 4=语言 5=字母 8=页码 11=年份
+  - 详情:     /dsshiyidt/<id>.html
+  - 播放:     /dsshiyipy/<vid>-<sid>-<nid>.html
+  - 搜索:     /dsshiyisc/<kw>-------------.html；分页 /dsshiyisc/<kw>----------<page>---.html
+  - 注: /index.php/vod/search.html?wd= 在本站回退首页，非搜索结果；关键词搜索走伪静态 /dsshiyisc/
 
-列表/搜索卡片:
-  - 主列表: ul.stui-vodlist > li > a.stui-vodlist__thumb.lazyload
-  - 搜索主结果: ul.stui-vodlist__media > li.active > a.v-thumb.stui-vodlist__thumb.lazyload
-  - 侧边热门(必须排除): a.m-thumb / .detail-side / ul.stui-vodlist__text，背景图 style 封面
-  - 锚点 href/title/data-original；span.pic-text.text-right = 副标；h4/h3.title a = 片名兜底
+分类导航（线上实证首页菜单，两组）:
+  主菜单 navlist: 1 电影 2 电视剧 3 综艺 4 动漫 5 短剧 豆瓣Top250(/label/duoban.html)
+  子分类 submenu_mi: 6 动作片 7 喜剧片 8 爱情片 9 科幻片 10 恐怖片 11 剧情片
+                     12 战争片 13 纪录片 14 悬疑片 15 犯罪片
+  豆瓣Top250 分页: /label/movie/page/<N>.html（第1页 /label/duoban.html）
 
-详情字段:
-  - 片名 h1.title；海报 img.lazyload[data-original]（src 为 load.gif 占位）
-  - 简介 span.detail-content（完整版,display:none）优先，span.detail-sketch（截断版）兜底
-  - 主演/导演: p.data > span.text-muted 标签之后的一串 <a>，逗号拼接；无 <a> 取纯文本
-  - 类型/地区/年份: p.data 内 span.text-muted(.hidden-xs) 标签之后文本
-  - 线路: div.stui-pannel-box.b.playlist.mb；h3.title 线路名（DOM 顺序即站点顺序，编号与 URL 段不一致时以 DOM/URL 为准）；
-          ul.stui-content__playlist > li > a[href]，a 文本=集名
+列表卡片（首页/分类/搜索同构，实证）:
+  - li > a[href=/dsshiyidt/<id>.html] > img.thumb.lazy[alt=片名][data-original=封面]
+  - div.hdinfo > span.qb = 副标(已完结/更新至N集)；div.rating = 评分
+  - h3.dytit > a = 片名兜底；p.inzhuy = 主演行
+  - 封面兜底: data-original → data-src(轮播 coveimg) → src；排除 blank.gif/logo/caid 占位
 
-播放直链: 播放页内联 player_aaaa JSON，encrypt:0 时取 url 直出 m3u8；
-          直链 CDN 域名各线路不同，不写死；保留 master 多码率首条子流拆分兜底，失败回退 parse:1 客户端嗅探。
+详情字段（实证详情页）:
+  - 片名 div.moviedteail_tt > h1
+  - 海报: 背景 cover url 优先，兜底 moviedteail 前非占位 img src
+  - 元信息 ul.moviedteail_list > li: 类型/地区/年份/又名/导演/编剧/主演/语言/更新
+  - 简介 div.yp_context
+  - 线路 div.mi_paly_box: 线路名 div.ypxingq_t(去“-在线播放”后缀)；
+    选集 div.paly_list_btn > a.play_movie；外链 //app2.* (APP秒播) 排除，仅取 /dsshiyipy/ 本站选集
+
+播放直链: 播放页内联 player_aaaa JSON，括号深度配对截取；encrypt:0 时取 url 直出 m3u8；
+          master m3u8 取首条子流拆分兜底，失败回退 parse:1 嗅探。
+
+反爬校验（XCDN Bot detection，实证 2026-11-23）:
+  - 边缘节点对可疑请求回 408，body 为 PoW 挑战页（title "Bot detection"，含 /__xcdn/captcha/api/init）。
+  - 闭环: GET /__xcdn/captcha/api/init → {challenge, difficulty}；
+    枚举 nonce 使 sha256(challenge + nonce) 十六进制前 difficulty 位为 '0'；
+    GET /__xcdn/captcha/api/verify，头 X-CDN-VERIFY-NONCE / X-CDN-VERIFY-RESULT；
+    verify 200 后服务端 Set-Cookie __xcdn_captcha_verified=<JWT>（次日过期），携带该 Cookie 访问内容页即 200 出片。
+  - 同一 session 内 Cookie 跨页复用；失效后再次遇挑战自动重解。
 """
 import re
 import sys
 import json
 import time
 import socket
+import hashlib
 import urllib.parse
 
 sys.path.append('..')
 
-# 云端出口 IPv6 不通：强制 IPv4 解析（壳子环境正常时不影响）
+# 云端出口 IPv6 不通/国内 IPv6 不稳：强制 IPv4 解析（壳子本地网络正常时不影响）
 try:
     _orig_getaddrinfo = socket.getaddrinfo
     def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+        res = _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+        v4 = [x for x in res if x[0] == socket.AF_INET]
+        return v4 or res
     socket.getaddrinfo = _ipv4_getaddrinfo
 except Exception:
     pass
@@ -86,186 +99,165 @@ except ImportError:
 
         def log(self, *a, **kw):
             try:
-                print("[cssgm]", *a)
+                print("[xnhrsb]", *a)
             except Exception:
                 pass
 
     Spider = _BaseSpider
 
 
-HOST = "https://www.cssgm.com.cn"
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+HOST = "https://m.xnhrsb.com"
+UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
+      "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
 DEFAULT_PIC = ""
 
 INTRO_PREFIX = "🍊小橙子为您介绍剧情👉请不要相信视频中的广告，以免上当受骗！"
 
-# ===================== 分类（对齐站点顶部导航）=====================
+# ===================== 分类（对齐站点顶部导航 navlist，线上实证）=====================
+# 站点顶部导航仅: 电影/电视剧/综艺/动漫/短剧/豆瓣Top250；第二行标签(动作片…犯罪片)不进一级分类栏
+# 豆瓣Top250 为自定义标签页 /label/duoban.html，分页 /label/movie/page/<N>.html
 CLASSES = [
-    {"type_id": "1",  "type_name": "电影"},
-    {"type_id": "2",  "type_name": "电视剧"},
-    {"type_id": "3",  "type_name": "综艺片"},
-    {"type_id": "4",  "type_name": "动漫"},
-    {"type_id": "24", "type_name": "短剧"},
+    {"type_id": "1",      "type_name": "电影"},
+    {"type_id": "2",      "type_name": "电视剧"},
+    {"type_id": "3",      "type_name": "综艺"},
+    {"type_id": "4",      "type_name": "动漫"},
+    {"type_id": "5",      "type_name": "短剧"},
+    {"type_id": "duoban", "type_name": "豆瓣Top250"},
 ]
 
-# ---- 各频道子类型（/list/id/<subtype>.html）----
-_MOVIE_SUBTYPE = [("6", "动作片"), ("7", "喜剧片"), ("8", "爱情片"), ("9", "科幻片"),
-                  ("10", "剧情片"), ("11", "战争片"), ("41", "动画片"), ("12", "记录片"),
-                  ("39", "恐怖片")]
-_TV_SUBTYPE = [("13", "国产剧"), ("14", "香港剧"), ("15", "韩国剧"), ("16", "欧美剧"),
-               ("22", "台湾剧"), ("21", "日本剧"), ("20", "泰国剧"), ("23", "海外剧")]
-_ZY_SUBTYPE = [("25", "大陆综艺"), ("26", "日韩综艺"), ("27", "港台综艺"), ("28", "欧美综艺")]
-_DM_SUBTYPE = [("29", "国产动漫"), ("30", "日本动漫"), ("42", "港台动漫"),
-               ("31", "欧美动漫"), ("43", "海外动漫")]
-_DJ_SUBTYPE = [("40", "短剧大全"), ("44", "AI漫剧")]
-
-# ---- 剧情 class ----
-_MOVIE_CLASS = ["喜剧", "爱情", "恐怖", "动作", "科幻", "剧情", "战争", "警匪",
-                "犯罪", "动画", "奇幻", "武侠", "冒险", "枪战", "悬疑", "惊悚",
-                "经典", "青春", "文艺", "微电影", "古装", "历史", "运动", "农村",
-                "儿童", "网络电影"]
-_TV_CLASS = ["古装", "战争", "青春偶像", "喜剧", "家庭", "犯罪", "动作", "奇幻",
-             "剧情", "历史", "经典", "乡村", "情景", "商战", "网剧", "其他"]
-_ZY_CLASS = ["选秀", "情感", "访谈", "播报", "旅游", "音乐", "美食", "纪实",
-             "曲艺", "生活", "游戏互动", "财经", "求职"]
-_DM_CLASS = ["情感", "科幻", "热血", "推理", "搞笑", "冒险", "萝莉", "校园",
-            "动作", "机战", "运动", "战争", "少年", "少女", "社会", "原创",
-            "亲子", "益智", "励志", "其他"]
-
-# ---- 地区 area ----
-_MOVIE_AREA = ["大陆", "香港", "台湾", "美国", "法国", "英国", "日本", "韩国",
-               "德国", "泰国", "印度", "意大利", "西班牙", "加拿大", "其他"]
-_TV_AREA = ["内地", "韩国", "香港", "台湾", "日本", "美国", "泰国", "英国",
-            "新加坡", "其他"]
-_ZY_AREA = ["内地", "港台", "日韩", "欧美"]
-_DM_AREA = ["国产", "日本", "欧美", "其他"]
-
-# ---- 年份 year（站点实证，电影缺 2011）----
-_MOVIE_YEAR = ["2010", "2012", "2013", "2014", "2015", "2016", "2017", "2018",
-               "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"]
-_TV_YEAR = [str(y) for y in range(2026, 2009, -1)]
-_ZY_YEAR = [str(y) for y in range(2018, 2003, -1)]
-_DM_YEAR = [str(y) for y in range(2018, 2003, -1)]
-
-# ---- 语言 lang ----
-_LANG_MOVIE = ["国语", "英语", "粤语", "闽南语", "韩语", "日语", "法语", "德语", "其它"]
-_LANG_7 = ["国语", "英语", "粤语", "闽南语", "韩语", "日语", "其它"]
-
-# ---- 字母 letter：A-Z + 0-9 ----
-_LETTERS = ["0-9"] + [chr(c) for c in range(65, 91)]
-
-# ---- 排序 sort（站点 by/time|hits|score）----
-_SORT = [("time", "最新"), ("hits", "最热"), ("score", "评分")]
+# ===================== 筛选（线上实证静态下发，各频道选项与站点一致）=====================
+_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+            "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "0~9"]
+_ORDER = [
+    {"n": "按时间", "v": "time"},
+    {"n": "按人气", "v": "hits"},
+    {"n": "按评分", "v": "score"},
+]
 
 
-def _class_opts(items):
-    return [{"n": "全部", "v": ""}] + [{"n": x, "v": x} for x in items]
+def _opts(values):
+    return [{"n": "全部", "v": ""}] + [{"n": x, "v": x} for x in values]
 
 
-def _subtype_opts(pairs):
-    return [{"n": "全部", "v": ""}] + [{"n": n, "v": v} for v, n in pairs]
+def _build(types, areas, langs, years):
+    # 维度顺序对齐站点筛选栏：影片类型→年份→地区→语言→字母→排序
+    dims = []
+    if types:
+        dims.append({"key": "class", "name": "影片类型", "value": _opts(types)})
+    if years:
+        dims.append({"key": "year", "name": "年份", "value": _opts(years)})
+    if areas:
+        dims.append({"key": "area", "name": "地区", "value": _opts(areas)})
+    if langs:
+        dims.append({"key": "lang", "name": "语言", "value": _opts(langs)})
+    dims.append({"key": "letter", "name": "字母", "value": _opts(_LETTERS)})
+    dims.append({"key": "order", "name": "排序", "value": _ORDER})
+    return dims
 
 
-def _lang_opts(items):
-    return [{"n": "全部", "v": ""}] + [{"n": x, "v": x} for x in items]
+# —— 电影系（电影/动作/喜剧/爱情/科幻/恐怖/剧情/战争/纪录/悬疑/犯罪 共用一套）——
+_MOVIE_TYPES = ["喜剧", "爱情", "恐怖", "动作", "科幻", "剧情", "战争", "警匪",
+    "犯罪", "动画", "奇幻", "武侠", "冒险", "枪战", "恐怖", "悬疑", "惊悚", "经典",
+    "青春", "文艺", "微电影", "古装", "历史", "运动", "农村", "儿童", "网络电影"]
+_MOVIE_AREA = ["大陆", "香港", "台湾", "美国", "法国", "英国", "日本", "韩国", "德国",
+    "泰国", "印度", "意大利", "西班牙", "加拿大", "其他"]
+_MOVIE_LANG = ["国语", "英语", "粤语", "闽南语", "韩语", "日语", "法语", "德语", "其它"]
+_MOVIE_YEAR = ["2026", "2025", "2024", "2023", "2022", "2021", "2020", "2019",
+    "2018", "2017", "2016", "2015", "2014", "2013", "2012", "2011", "2010"]
 
+# —— 电视剧 ——
+_TV_TYPES = ["古装", "战争", "青春偶像", "喜剧", "家庭", "犯罪", "动作", "奇幻",
+    "剧情", "历史", "经典", "乡村", "情景", "商战", "网剧", "其他"]
+_TV_AREA = ["内地", "韩国", "香港", "台湾", "日本", "美国", "泰国", "英国", "新加坡", "其他"]
+_TV_YEAR = ["2026", "2025", "2024", "2023", "2022", "2021", "2020", "2019", "2018",
+    "2017", "2016", "2015", "2014", "2013", "2012", "2011", "2010", "2009", "2008",
+    "2006", "2005", "2004"]
 
-def _letter_opts():
-    return [{"n": "全部", "v": ""}] + [{"n": x, "v": x} for x in _LETTERS]
+# —— 综艺 ——
+_VAR_TYPES = ["选秀", "情感", "访谈", "播报", "旅游", "音乐", "美食", "纪实", "曲艺",
+    "生活", "游戏互动", "财经", "求职"]
+_VAR_AREA = ["内地", "港台", "日韩", "欧美"]
+_VAR_YEAR = ["2026", "2025", "2024", "2023", "2022", "2021", "2020", "2019", "2018",
+    "2017", "2016", "2015", "2014", "2013", "2012", "2011", "2010", "2009", "2008",
+    "2007", "2006", "2005", "2004"]
 
+# —— 动漫 ——
+_ANI_TYPES = ["情感", "科幻", "热血", "推理", "搞笑", "冒险", "萝莉", "校园", "动作",
+    "机战", "运动", "战争", "少年", "少女", "社会", "原创", "亲子", "益智", "励志", "其他"]
+_ANI_AREA = ["国产", "日本", "欧美", "其他"]
+_ANI_YEAR = ["2026", "2025", "2024", "2023", "2022", "2021", "2020", "2019", "2018",
+    "2017", "2016", "2015", "2014", "2013", "2012", "2011", "2010", "2009", "2008",
+    "2007", "2006", "2005", "2004"]
 
-def _sort_opts():
-    return [{"n": "默认", "v": ""}] + [{"n": n, "v": v} for v, n in _SORT]
+# —— 短剧 ——
+_SH_TYPES = ["短剧"]
+_SH_AREA = ["大陆"]
+_SH_LANG = ["国语"]
+_SH_YEAR = ["2026", "2025", "2024", "2023", "2022"]
 
+_LANG_MAIN = ["国语", "英语", "粤语", "闽南语", "韩语", "日语", "其它"]
 
-FILTERS = {
-    "1": [
-        {"key": "subtype", "name": "类型", "value": _subtype_opts(_MOVIE_SUBTYPE)},
-        {"key": "class",   "name": "剧情", "value": _class_opts(_MOVIE_CLASS)},
-        {"key": "area",    "name": "地区", "value": _class_opts(_MOVIE_AREA)},
-        {"key": "year",    "name": "年份", "value": _class_opts(_MOVIE_YEAR)},
-        {"key": "lang",    "name": "语言", "value": _lang_opts(_LANG_MOVIE)},
-        {"key": "letter",  "name": "字母", "value": _letter_opts()},
-        {"key": "sort",    "name": "排序", "value": _sort_opts()},
-    ],
-    "2": [
-        {"key": "subtype", "name": "类型", "value": _subtype_opts(_TV_SUBTYPE)},
-        {"key": "class",   "name": "剧情", "value": _class_opts(_TV_CLASS)},
-        {"key": "area",    "name": "地区", "value": _class_opts(_TV_AREA)},
-        {"key": "year",    "name": "年份", "value": _class_opts(_TV_YEAR)},
-        {"key": "lang",    "name": "语言", "value": _lang_opts(_LANG_7)},
-        {"key": "letter",  "name": "字母", "value": _letter_opts()},
-        {"key": "sort",    "name": "排序", "value": _sort_opts()},
-    ],
-    "3": [
-        {"key": "subtype", "name": "类型", "value": _subtype_opts(_ZY_SUBTYPE)},
-        {"key": "class",   "name": "剧情", "value": _class_opts(_ZY_CLASS)},
-        {"key": "area",    "name": "地区", "value": _class_opts(_ZY_AREA)},
-        {"key": "year",    "name": "年份", "value": _class_opts(_ZY_YEAR)},
-        {"key": "lang",    "name": "语言", "value": _lang_opts(_LANG_7)},
-        {"key": "letter",  "name": "字母", "value": _letter_opts()},
-        {"key": "sort",    "name": "排序", "value": _sort_opts()},
-    ],
-    "4": [
-        {"key": "subtype", "name": "类型", "value": _subtype_opts(_DM_SUBTYPE)},
-        {"key": "class",   "name": "剧情", "value": _class_opts(_DM_CLASS)},
-        {"key": "area",    "name": "地区", "value": _class_opts(_DM_AREA)},
-        {"key": "year",    "name": "年份", "value": _class_opts(_DM_YEAR)},
-        {"key": "lang",    "name": "语言", "value": _lang_opts(_LANG_7)},
-        {"key": "letter",  "name": "字母", "value": _letter_opts()},
-        {"key": "sort",    "name": "排序", "value": _sort_opts()},
-    ],
-    # 短剧：站点仅有“类型”一组有效筛选；剧情/地区/年份为空壳，无语言/字母组
-    "24": [
-        {"key": "subtype", "name": "类型", "value": _subtype_opts(_DJ_SUBTYPE)},
-    ],
-}
+FILTERS = {}
+FILTERS["1"] = _build(_MOVIE_TYPES, _MOVIE_AREA, _MOVIE_LANG, _MOVIE_YEAR)
+FILTERS["2"] = _build(_TV_TYPES, _TV_AREA, _LANG_MAIN, _TV_YEAR)
+FILTERS["3"] = _build(_VAR_TYPES, _VAR_AREA, _LANG_MAIN, _VAR_YEAR)
+FILTERS["4"] = _build(_ANI_TYPES, _ANI_AREA, _LANG_MAIN, _ANI_YEAR)
+FILTERS["5"] = _build(_SH_TYPES, _SH_AREA, _SH_LANG, _SH_YEAR)
+FILTERS["duoban"] = []
 
 # ===================== 正则 =====================
-# 列表/搜索卡片锚点（class 顺序可能为 v-thumb / m-thumb 在前）；
-# 主列表/搜索主结果锚点均带 lazyload；侧边背景图热门锚点无 lazyload，据此排除
-_RE_CARD_A = re.compile(
-    r'<a[^>]*class="[^"]*stui-vodlist__thumb[^"]*lazyload[^"]*"[^>]*>'
-    r'([\s\S]*?)</a>', re.I)
-_RE_HREF = re.compile(r'href="([^"]+)"', re.I)
-_RE_TITLE = re.compile(r'title="([^"]*)"', re.I)
+# 列表卡片（普通 thumb lazy / 轮播 coveimg）
+_RE_LI = re.compile(r'<li[^>]*>([\s\S]*?)</li>', re.I)
+_RE_HREF = re.compile(r'href="(/dsshiyidt/\d+\.html)"', re.I)
+_RE_IMG = re.compile(
+    r'<img[^>]*class="[^"]*(?:thumb lazy|coveimg)[^"]*"[^>]*>', re.I)
+_RE_ALT = re.compile(r'alt="([^"]*)"', re.I)
 _RE_ORIG = re.compile(r'data-original="([^"]*)"', re.I)
-_RE_PIC_TEXT = re.compile(r'<span[^>]*class="pic-text[^"]*"[^>]*>([\s\S]*?)</span>', re.I)
-_RE_H_NAME = re.compile(
-    r'<h[34][^>]*>\s*<a[^>]*(?:title="([^"]*)")?[^>]*>([\s\S]*?)</a>', re.I)
+_RE_SRC = re.compile(r'\bsrc="([^"]*)"', re.I)
+_RE_DSRC = re.compile(r'data-src="([^"]*)"', re.I)
+_RE_QB = re.compile(r'<span[^>]*class="qb"[^>]*>([\s\S]*?)</span>', re.I)
+_RE_RATING = re.compile(r'<div[^>]*class="rating"[^>]*>([\s\S]*?)</div>', re.I)
+_RE_DYTIT = re.compile(
+    r'<h3[^>]*class="dytit"[^>]*>\s*<a[^>]*>([\s\S]*?)</a>', re.I)
+_RE_INZHU = re.compile(r'<p[^>]*class="inzhuy"[^>]*>([\s\S]*?)</p>', re.I)
 
 # 详情
-_RE_H1 = re.compile(r'<h1[^>]*class="title"[^>]*>([\s\S]*?)</h1>', re.I)
-_RE_DETAIL_PIC = re.compile(
-    r'<img[^>]*class="lazyload"[^>]*data-original="([^"]*)"', re.I)
-_RE_INTRO_FULL = re.compile(
-    r'<span[^>]*class="detail-content"[^>]*>([\s\S]*?)</span>', re.I)
-_RE_INTRO_SKETCH = re.compile(
-    r'<span[^>]*class="detail-sketch"[^>]*>([\s\S]*?)</span>', re.I)
-_RE_LABEL = re.compile(
-    r'<span[^>]*class="text-muted[^"]*"[^>]*>({lab}：)</span>\s*'
-    r'([\s\S]*?)(?=<span[^>]*class="(?:split-line|text-muted)|<p|</p|$)',
-    re.I)
-_RE_LINK = re.compile(r'<a[^>]*>([\s\S]*?)</a>', re.I)
+_RE_H1 = re.compile(
+    r'<div[^>]*class="moviedteail_tt"[^>]*>\s*<h1[^>]*>([\s\S]*?)</h1>', re.I)
+_RE_BG_COVER = re.compile(r'background-image:\s*url\(([^)]+)\)', re.I)
+_RE_INFO_LI = re.compile(r'<li[^>]*>([\s\S]*?)</li>', re.I)
+_RE_A_TEXT = re.compile(r'<a[^>]*>([\s\S]*?)</a>', re.I)
+_RE_SPAN = re.compile(r'<span[^>]*>([\s\S]*?)</span>', re.I)
+_RE_INTRO = re.compile(
+    r'<div[^>]*class="yp_context"[^>]*>([\s\S]*?)</div>', re.I)
+_RE_INTRO_META = re.compile(
+    r'<meta[^>]*name=["\']description["\'][^>]*content=["\']([^"\']*)["\']', re.I)
 
-# 线路分组（DOM 顺序即站点顺序）
-_RE_PLAY_BLOCK = re.compile(
-    r'<div[^>]*class="stui-pannel-box[^"]*playlist[^"]*"[^>]*>'
-    r'([\s\S]*?)(?=<div[^>]*class="stui-pannel-box[^"]*playlist[^"]*"|<!--\s*播放地址|$)',
-    re.I)
-_RE_LINE_NAME = re.compile(r'<h3[^>]*class="title"[^>]*>([\s\S]*?)</h3>', re.I)
+# 线路分组
+_RE_BOX = re.compile(
+    r'<div[^>]*class="mi_paly_box"[^>]*>([\s\S]*?)</div>\s*</div>\s*</div>', re.I)
+_RE_BOX_SIMPLE = re.compile(
+    r'<div[^>]*class="mi_paly_box"[^>]*>([\s\S]*?)(?=<div[^>]*class="mi_paly_box"|猜您还喜欢|$)', re.I)
+_RE_BOX_TITLE = re.compile(
+    r'<div[^>]*class="ypxingq_t[^"]*"[^>]*>([\s\S]*?)</div>', re.I)
 _RE_EP = re.compile(
-    r'<li[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>', re.I)
+    r'<a[^>]*class="play_movie"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>', re.I)
 
-# 分页总页：<span class="num">当前/总页</span>
+# 筛选区
+_RE_TAX = re.compile(
+    r'<div class="beautiful-taxonomy-filters-tax[^"]*"[^>]*>([\s\S]*?)(?=<div class="beautiful-taxonomy-filters-tax|</div>\s*</div>\s*</div>|$)', re.I)
+_RE_TAX_LABEL = re.compile(r'<label[^>]*>([^<]*)</label>', re.I)
+_RE_TAX_A = re.compile(
+    r'<a[^>]*href="(/dsshiyisw/[^"]+)"[^>]*>([\s\S]*?)</a>', re.I)
+
+# 分页总页
 _RE_PAGE_NUM = re.compile(r'<span[^>]*class="num"[^>]*>\s*(\d+)\s*/\s*(\d+)', re.I)
 
 
 class Spider(Spider):
 
     def getName(self):
-        return "毒舌影视"
+        return "m.xnhrsb.com"
 
     def init(self, extend=""):
         try:
@@ -282,11 +274,22 @@ class Spider(Spider):
         }
         self.default_pic = DEFAULT_PIC
         self._play_cache = {}
+        # XCDN PoW 校验会话：自建 session 保留挑战 Cookie，JWT 字符串双保险写入请求头
+        self._cd_session = None
+        self._cd_cookie = ""
 
     # ---------------- 基础工具 ----------------
     @staticmethod
+    def _is_placeholder_pic(pic):
+        if not pic:
+            return True
+        low = pic.lower()
+        return any(k in low for k in ("blank.gif", "logo.png", "caid.png",
+                                      "load.png", "load.gif", "placeholder",
+                                      "blank", "default"))
+
+    @staticmethod
     def _is_upstream_error(text, status=200):
-        """识别上游/网关错误空壳、Cloudflare 错误页与非 200 响应；正常业务页一律放行。"""
         if not text or len(text) < 200:
             return True
         try:
@@ -301,6 +304,108 @@ class Spider(Spider):
             "error code", "ray id", "web server is down",
             "sorry, you have been blocked"))
 
+    # ---------------- XCDN PoW 校验 ----------------
+    def _cd_session_get(self):
+        if self._cd_session is None:
+            try:
+                import requests as rq
+                sess = rq.Session()
+                sess.verify = False
+                adapter = rq.adapters.HTTPAdapter(
+                    pool_connections=10, pool_maxsize=10, max_retries=0)
+                sess.mount('https://', adapter)
+                sess.mount('http://', adapter)
+            except Exception:
+                sess = None
+            self._cd_session = sess
+        return self._cd_session
+
+    @staticmethod
+    def _is_challenge(text, status):
+        if text and ("Bot detection" in text or "/__xcdn/captcha/api/init" in text):
+            return True
+        try:
+            if status and int(status) in (403, 408, 429):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _solve_captcha(self):
+        """解 XCDN SHA-256 PoW；成功后把 verified JWT 存入 session 与请求头 Cookie。"""
+        try:
+            sess = self._cd_session_get()
+            h = dict(self.headers)
+            init_url = self.site_url + "/__xcdn/captcha/api/init"
+            if sess is not None:
+                ri = sess.get(init_url, headers=h, timeout=(10, 30))
+                settings = ri.json()
+            else:
+                ri = self.fetch(init_url, headers=h, timeout=(10, 30))
+                settings = ri.json()
+            challenge = str(settings.get("challenge", ""))
+            difficulty = int(settings.get("difficulty", 4))
+            if not challenge:
+                return False
+            target = "0" * difficulty
+            nonce = 0
+            result = ""
+            while nonce < 3_000_000:
+                nonce += 1
+                result = hashlib.sha256(
+                    (challenge + str(nonce)).encode("utf-8")).hexdigest()
+                if result[:difficulty] == target:
+                    break
+            else:
+                self.log("PoW 枚举未命中")
+                return False
+            vh = dict(h)
+            vh["X-CDN-VERIFY-NONCE"] = str(nonce)
+            vh["X-CDN-VERIFY-RESULT"] = result
+            verify_url = self.site_url + "/__xcdn/captcha/api/verify"
+            jwt = ""
+            if sess is not None:
+                rv = sess.get(verify_url, headers=vh, timeout=(10, 30))
+                if getattr(rv, "status_code", 200) != 200:
+                    self.log("verify 状态", getattr(rv, "status_code", "?"))
+                    return False
+                jwt = sess.cookies.get("__xcdn_captcha_verified", "")
+            else:
+                rv = self.fetch(verify_url, headers=vh, timeout=(10, 30))
+            if jwt:
+                self._cd_cookie = "__xcdn_captcha_verified=" + jwt
+                self.headers["Cookie"] = self._cd_cookie
+            self.log("PoW 校验通过 nonce=%s" % nonce)
+            return True
+        except Exception as e:
+            self.log("PoW 求解异常", e)
+            return False
+
+    def _http_get(self, url, headers=None, timeout=15):
+        """本站 GET：优先自建 session（保留校验 Cookie）；遇挑战自动解 PoW 后重放一次。"""
+        h = dict(self.headers)
+        if headers:
+            h.update(headers)
+        if self._cd_cookie:
+            h["Cookie"] = self._cd_cookie
+        sess = self._cd_session_get()
+        if sess is not None:
+            rsp = sess.get(url, headers=h, timeout=timeout)
+        else:
+            rsp = self.fetch(url, headers=h, timeout=timeout)
+        text = rsp.text if hasattr(rsp, "text") else ""
+        status = getattr(rsp, "status_code", 200)
+        if self._is_challenge(text, status):
+            self.log("遇 XCDN 挑战，解 PoW")
+            if self._solve_captcha():
+                if self._cd_cookie:
+                    h["Cookie"] = self._cd_cookie
+                if sess is not None:
+                    rsp = sess.get(url, headers=h, timeout=timeout)
+                else:
+                    rsp = self.fetch(url, headers=h, timeout=timeout)
+        return rsp
+
     def _fetch(self, url, headers=None, tries=3):
         last = ""
         for _ in range(tries):
@@ -308,7 +413,7 @@ class Spider(Spider):
                 h = dict(self.headers)
                 if headers:
                     h.update(headers)
-                rsp = self.fetch(url, headers=h, timeout=(10, 30))
+                rsp = self._http_get(url, headers=h, timeout=(10, 30))
                 status = getattr(rsp, "status_code", 200)
                 if hasattr(rsp, "text"):
                     text = rsp.text or ""
@@ -350,74 +455,141 @@ class Spider(Spider):
         s = re.sub(r"\n{2,}", "\n", s)
         return s.strip()
 
-    # ---------------- 列表解析 ----------------
-    def _is_placeholder_pic(self, pic):
-        if not pic:
-            return True
-        return any(k in pic.lower() for k in ("load.png", "load.gif",
-                                              "placeholder", "blank", "default"))
+    # ---------------- 列表卡片解析 ----------------
+    def _parse_one_card(self, block):
+        mh = _RE_HREF.search(block)
+        if not mh:
+            return None
+        href = mh.group(1).replace("&amp;", "&")
 
-    def _is_side_block(self, block):
-        # 侧边热播榜：m-thumb 缩略榜 / detail-side 容器 / 文字榜，必须排除
-        return ("m-thumb" in block or "detail-side" in block
-                or "stui-vodlist__text" in block)
+        # 片名：img alt 优先，h3.dytit>a 兜底
+        name = ""
+        mi = _RE_IMG.search(block)
+        if mi:
+            ma = _RE_ALT.search(mi.group(0))
+            if ma:
+                name = self._clean(ma.group(1))
+        if not name:
+            mt = _RE_DYTIT.search(block)
+            if mt:
+                name = self._clean(mt.group(1))
+        if not name:
+            return None
+
+        # 封面：data-original → data-src → src，排除占位
+        pic = ""
+        if mi:
+            mo = _RE_ORIG.search(mi.group(0))
+            if mo:
+                pic = mo.group(1)
+            if not pic:
+                md = _RE_DSRC.search(mi.group(0))
+                if md:
+                    pic = md.group(1)
+            if not pic:
+                ms = _RE_SRC.search(mi.group(0))
+                if ms:
+                    pic = ms.group(1)
+        if self._is_placeholder_pic(pic):
+            pic = ""
+
+        mp = _RE_QB.search(block)
+        remarks = self._clean(mp.group(1)) if mp else ""
+
+        mr = _RE_RATING.search(block)
+        score = self._clean(mr.group(1)) if mr else ""
+
+        return {
+            "vod_id": href,
+            "vod_name": name[:100],
+            "vod_pic": self._fix_url(pic) or self.default_pic,
+            "vod_remarks": remarks,
+            "vod_score": score,
+        }
 
     def _parse_cards(self, html):
-        videos = []
-        seen = set()
+        videos, seen = [], set()
         if not html:
             return videos
-        for m in _RE_CARD_A.finditer(html):
-            block = m.group(0)
-            if self._is_side_block(block):
+        for li in _RE_LI.finditer(html):
+            block = li.group(1)
+            if not _RE_HREF.search(block):
                 continue
-            mh = _RE_HREF.search(block)
-            if not mh:
+            card = self._parse_one_card(block)
+            if not card:
                 continue
-            href = mh.group(1).replace("&amp;", "&")
-            if "/cinema/" not in href:
+            if card["vod_id"] in seen:
                 continue
-            if href in seen:
-                continue
-            seen.add(href)
-
-            mt = _RE_TITLE.search(block)
-            name = self._clean(mt.group(1)) if mt else ""
-            mo = _RE_ORIG.search(block)
-            pic = mo.group(1) if mo else ""
-            if self._is_placeholder_pic(pic):
-                pic = ""
-
-            mp = _RE_PIC_TEXT.search(block)
-            remarks = self._clean(mp.group(1)) if mp else ""
-
-            # 片名兜底：锚点 title 缺失时取 h3/h4 文本
-            if not name:
-                mn = _RE_H_NAME.search(block)
-                if mn:
-                    name = self._clean(mn.group(1) or mn.group(2))
-            if not name:
-                continue
-
-            videos.append({
-                "vod_id": href,
-                "vod_name": name[:100],
-                "vod_pic": self._fix_url(pic) or self.default_pic,
-                "vod_remarks": remarks,
-            })
+            seen.add(card["vod_id"])
+            videos.append(card)
         return videos
 
-    def _page_count(self, html):
-        if not html:
-            return 1
-        m = _RE_PAGE_NUM.search(html)
-        if m:
-            try:
-                return max(1, int(m.group(2)))
-            except Exception:
-                pass
-        nums = [int(x) for x in re.findall(r'-(\d+)\.html', html)]
-        return max(1, max(nums)) if nums else 1
+    # ---------------- 筛选动态解析 ----------------
+    _LABEL_KEY = {
+        "影片类型": "class", "类型": "class",
+        "地区": "area", "语言": "lang", "字母": "letter",
+        "年份": "year", "排序": "order", "时间": "order",
+    }
+
+    def _parse_filters(self, html):
+        """从分类页 beautiful-taxonomy-filters-tax 动态解析筛选组（与站点逐字一致）。"""
+        groups = {}
+        for blk in _RE_TAX.finditer(html):
+            body = blk.group(1)
+            ml = _RE_TAX_LABEL.search(body)
+            label = self._clean(ml.group(1)) if ml else ""
+            key = self._LABEL_KEY.get(label)
+            if not key:
+                continue
+            items = [{"n": "全部", "v": ""}]
+            for href, txt in _RE_TAX_A.findall(body):
+                tok = href.split("/dsshiyisw/")[1].replace(".html", "").split("-")
+                tok += [""] * (12 - len(tok))
+                v = {"area": tok[1], "order": tok[2], "class": tok[3],
+                     "lang": tok[4], "letter": tok[5], "year": tok[11]}.get(key, "")
+                v = urllib.parse.unquote(v)
+                n = self._clean(txt)
+                if n and n != "全部":
+                    items.append({"n": n, "v": v})
+            if len(items) > 1:
+                groups[key] = {"key": key, "name": label, "value": items}
+        order = ["class", "area", "lang", "year", "letter", "order"]
+
+        # 排序组：独立 view-filter 容器 a.order（按时间/人气/评分）
+        vf = re.search(r'<div[^>]*class="view-filter"[^>]*>([\s\S]*?)</div>', html)
+        if vf:
+            order_items = [{"n": "全部", "v": ""}]
+            for m in re.finditer(
+                    r'<a([^>]*)>([\s\S]*?)</a>', vf.group(1)):
+                attrs, txt = m.group(1), m.group(2)
+                href = re.search(r'href="(/dsshiyisw/[^"]+)"', attrs)
+                if not href or "order" not in attrs:
+                    continue
+                tok = href.group(1).split("/dsshiyisw/")[1].replace(".html", "").split("-")
+                tok += [""] * (12 - len(tok))
+                v = tok[2]
+                n = self._clean(txt)
+                if n and v:
+                    order_items.append({"n": n, "v": v})
+            if len(order_items) > 1:
+                groups["order"] = {"key": "order", "name": "排序", "value": order_items}
+
+        return [groups[k] for k in order if k in groups]
+
+    def _list_url(self, tid, extend, page=1):
+        extend = extend or {}
+        def _val(k):
+            v = (extend.get(k) or "").strip()
+            return "" if v in ("全部", "none") else v
+        area = _val("area"); order = _val("order"); cls = _val("class")
+        lang = _val("lang"); letter = _val("letter"); year = _val("year")
+        page = int(page) if page else 1
+        if not any([area, order, cls, lang, letter, year]) and page <= 1:
+            return "%s/dsshiyitp/%s.html" % (self.site_url, tid)
+        tok = [str(tid), area, order, cls, lang, letter, "", "",
+               str(page), "", "", year]
+        seg = "-".join(urllib.parse.quote(x) if not x.isascii() else x for x in tok)
+        return "%s/dsshiyisw/%s.html" % (self.site_url, seg)
 
     # ---------------- 首页 / 分类 / 搜索 ----------------
     def homeContent(self, filter=False):
@@ -428,42 +600,6 @@ class Spider(Spider):
         self.log("home HTML 长度: %d" % len(html))
         return {"list": self._parse_cards(html)}
 
-    def _category_path(self, tid, extend, page):
-        subtype = extend.get("subtype") or ""
-        klass = extend.get("class") or ""
-        area = extend.get("area") or ""
-        year = extend.get("year") or ""
-        lang = extend.get("lang") or ""
-        letter = extend.get("letter") or ""
-        sort = extend.get("sort") or ""
-
-        # 无任何筛选：主分类导航路由；分页 /cat/<tid>-<page>.html
-        if not any([subtype, klass, area, year, lang, letter, sort]):
-            if page and page > 1:
-                base = "/cat/%s-%d.html" % (tid, page)
-            else:
-                base = "/cat/%s.html" % tid
-            return self.site_url + base
-
-        idval = subtype or tid
-        segs = []
-        if sort:
-            segs.append("by/%s" % sort)
-        if area:
-            segs.append("area/%s" % urllib.parse.quote(area))
-        if klass:
-            segs.append("class/%s" % urllib.parse.quote(klass))
-        segs.append("id/%s" % idval)
-        if year:
-            segs.append("year/%s" % year)
-        if lang:
-            segs.append("lang/%s" % urllib.parse.quote(lang))
-        if letter:
-            segs.append("letter/%s" % letter)
-        if page and page > 1:
-            segs.append("page/%d" % page)
-        return self.site_url + "/list/" + "/".join(segs) + ".html"
-
     def categoryContent(self, tid, pg, filter, extend):
         page = int(pg) if pg else 1
         if isinstance(extend, str):
@@ -472,66 +608,94 @@ class Spider(Spider):
             except Exception:
                 extend = {}
         extend = extend or {}
-        for k in list(extend.keys()):
-            if extend[k] in ("", None, "全部"):
-                del extend[k]
 
-        url = self._category_path(str(tid), extend, page)
+        # 豆瓣Top250：自定义标签页，独立路由，无筛选组
+        if tid == "duoban":
+            url = self._duoban_url(page)
+            self.log("category(豆瓣): %s" % url)
+            html = self._fetch(url)
+            self.log("  HTML 长度: %d" % len(html))
+            videos = self._parse_cards(html)
+            pagecount = self._page_count(html, page)
+            self.log("  最终: %d 条, 总页数: %d" % (len(videos), pagecount))
+            return {
+                "list": videos, "page": page, "pagecount": pagecount,
+                "limit": 48, "total": pagecount * 48,
+            }
+
+        url = self._list_url(tid, extend, page)
         self.log("category: %s" % url)
         html = self._fetch(url)
         self.log("  HTML 长度: %d" % len(html))
 
         videos = self._parse_cards(html)
-        pagecount = self._page_count(html)
+        pagecount = self._page_count(html, page)
         self.log("  最终: %d 条, 总页数: %d" % (len(videos), pagecount))
 
         return {
             "list": videos, "page": page, "pagecount": pagecount,
-            "limit": 30, "total": pagecount * 30,
+            "limit": 45, "total": pagecount * 45,
         }
+
+    def _duoban_url(self, page=1):
+        page = int(page) if page else 1
+        if page <= 1:
+            return "%s/label/duoban.html" % self.site_url
+        return "%s/label/movie/page/%d.html" % (self.site_url, page)
+
+    def _page_count(self, html, page):
+        if not html:
+            return 1
+        m = _RE_PAGE_NUM.search(html)
+        if m:
+            try:
+                return max(1, int(m.group(2)))
+            except Exception:
+                pass
+        # 豆瓣标签页末页 /label/movie/page/<N>.html
+        label_pages = [int(x) for x in re.findall(r'/label/movie/page/(\d+)\.html', html)]
+        if label_pages:
+            return max(label_pages)
+        pages = [int(x) for x in re.findall(r'/dsshiyisw/\d+--------(\d+)---', html)]
+        return max(pages) if pages else max(1, page)
 
     def searchContent(self, key, quick, pg="1"):
         page = int(pg) if pg else 1
-        keyword = urllib.parse.quote(str(key or "").strip())
+        kw = urllib.parse.quote(key)
         if page <= 1:
-            url = "%s/so.html?wd=%s" % (self.site_url, keyword)
+            url = "%s/dsshiyisc/%s-------------.html" % (self.site_url, kw)
         else:
-            url = "%s/so/page/%d/wd/%s.html" % (self.site_url, page, keyword)
+            url = "%s/dsshiyisc/%s----------%d---.html" % (self.site_url, kw, page)
         self.log("search: %s" % url)
         html = self._fetch(url)
-        self.log("  HTML 长度: %d" % len(html))
-
         videos = self._parse_cards(html)
+        pagecount = self._page_count(html, page)
+        self.log("  搜索: %d 条, 总页数: %d" % (len(videos), pagecount))
         return {
-            "list": videos, "page": page,
-            "pagecount": self._page_count(html),
-            "limit": 30, "total": 999,
+            "list": videos, "page": page, "pagecount": pagecount,
+            "limit": 45, "total": pagecount * 45,
         }
 
     def searchContentPage(self, key, quick, pg="1"):
         return self.searchContent(key, quick, pg)
 
     # ---------------- 详情字段 ----------------
-    def _label_seg(self, html, label):
-        pat = _RE_LABEL.pattern.replace("{lab}", re.escape(label))
-        m = re.search(pat, html.replace("\n", " "), re.I)
-        return m.group(2) if m else ""
-
-    def _label_field(self, html, label):
-        """纯文本标签字段（类型/地区/年份）。"""
-        seg = self._label_seg(html, label)
-        return self._clean(seg)
-
-    def _links_field(self, html, label):
-        """主演/导演：标签后一串 <a> 逗号拼接；无 <a> 取纯文本。"""
-        seg = self._label_seg(html, label)
-        if not seg:
-            return ""
-        links = [self._clean(a) for a in _RE_LINK.findall(seg)]
-        links = [x for x in links if x]
-        if links:
-            return ",".join(links)
-        return self._clean(seg)
+    def _info_field(self, html, label):
+        """提取 moviedteail_list 中指定标签后的文本（a 逗号拼接 / span 纯文本）。"""
+        for li in _RE_INFO_LI.finditer(html):
+            seg = li.group(1)
+            if ("%s：" % label) not in seg and ("%s:" % label) not in seg:
+                continue
+            after = re.split(r'%s[：:]' % re.escape(label), seg, 1)[-1]
+            links = [self._clean(a) for a in _RE_A_TEXT.findall(after)]
+            links = [x for x in links if x]
+            if links:
+                return ",".join(links)
+            sp = _RE_SPAN.search(after)
+            if sp:
+                return self._clean(sp.group(1))
+            return self._clean(after)
+        return ""
 
     def detailContent(self, ids):
         if not ids:
@@ -555,64 +719,91 @@ class Spider(Spider):
                 name = self._clean(mt.group(1).split("_")[0].split("-")[0])
         name = name or vod_id
 
-        # 海报
+        # 海报：背景 cover 优先，兜底 moviedteail 前非占位 img
         pic = ""
-        mp = _RE_DETAIL_PIC.search(html)
-        if mp:
-            pic = mp.group(1)
+        mb = _RE_BG_COVER.search(html)
+        if mb:
+            pic = mb.group(1)
+        if self._is_placeholder_pic(pic):
+            pic = ""
+        if not pic:
+            h1pos = html.find("moviedteail")
+            head = html[:h1pos] if h1pos > 0 else html
+            for im in re.finditer(r'<img[^>]*src="([^"]*)"', head):
+                if not self._is_placeholder_pic(im.group(1)):
+                    pic = im.group(1)
+                    break
         pic = self._fix_url(pic) or self.default_pic
 
-        # 简介：完整版优先，截断版兜底
+        # 简介：yp_context 优先，meta description 末层兜底
         content = ""
-        mf = _RE_INTRO_FULL.search(html)
+        mf = _RE_INTRO.search(html)
         if mf:
             content = self._clean(mf.group(1))
         if not content:
-            ms = _RE_INTRO_SKETCH.search(html)
-            if ms:
-                content = self._clean(ms.group(1))
-        content = re.sub(r"^(剧情简介|简介)[：:]\s*", "", content)
+            mm = _RE_INTRO_META.search(html)
+            if mm:
+                content = self._clean(mm.group(1))
+        content = re.sub(r"^(影片介绍|简介|剧情简介)\s*", "", content)
         content = (INTRO_PREFIX + "\n" + content) if content else INTRO_PREFIX
 
         # 元信息
-        actor = self._links_field(html, "主演")
-        director = self._links_field(html, "导演")
-        classify = self._label_field(html, "类型")
-        area = self._label_field(html, "地区")
-        year_raw = self._label_field(html, "年份")
+        actor = self._info_field(html, "主演")
+        director = self._info_field(html, "导演")
+        classify = self._info_field(html, "类型")
+        area = self._info_field(html, "地区")
+        year_raw = self._info_field(html, "年份")
         my = re.search(r"(\d{4})", year_raw)
         year = my.group(1) if my else year_raw
 
-        # 详情页副标（全1集/HD…）
+        # 副标：仅限主信息区（片名→线路盒之间），避免误取“猜您还喜欢”推荐卡片的 qb。
+        # 主区无 qb 时取“更新：日期”，再兜底线路数。
+        h1pos = html.find("moviedteail_tt")
+        boxpos = html.find("mi_paly_box", h1pos) if h1pos > 0 else -1
+        main_seg = html[h1pos:boxpos] if h1pos > 0 and boxpos > h1pos else html
         remarks = ""
-        mr = _RE_PIC_TEXT.search(html)
+        mr = _RE_QB.search(main_seg)
         if mr:
             remarks = self._clean(mr.group(1))
+        if not remarks:
+            upd = self._info_field(html, "更新")
+            if upd:
+                remarks = "更新：" + upd
 
-        # ===== 线路与选集（DOM 顺序）=====
+        # ===== 线路与选集：mi_paly_box 分组，保 DOM 顺序 =====
         play_from, play_url = [], []
-        for block in _RE_PLAY_BLOCK.findall(html):
-            mn = _RE_LINE_NAME.search(block)
-            line_name = self._clean(mn.group(1)) if mn else ""
-            eps = []
-            seen_ep = set()
-            for ma in _RE_EP.finditer(block):
-                ep_href, ep_inner = ma.group(1), ma.group(2)
-                ep_href = ep_href.replace("&amp;", "&")
-                if ep_href in seen_ep:
+        for bm in _RE_BOX_SIMPLE.finditer(html):
+            block = bm.group(1)
+            # 线路名
+            line = ""
+            mt = _RE_BOX_TITLE.search(block)
+            if mt:
+                line = self._clean(mt.group(1))
+                line = re.sub(r"[-—]\s*(在线播放|在线|播放)\s*$", "", line).strip()
+            # 选集
+            eps, seen_ep = [], set()
+            for em in _RE_EP.finditer(block):
+                href, ep_inner = em.group(1), em.group(2)
+                href = href.replace("&amp;", "&")
+                # 排除外链 APP 秒播，仅取本站 /dsshiyipy/ 选集
+                if "/dsshiyipy/" not in href:
                     continue
-                seen_ep.add(ep_href)
+                if href in seen_ep:
+                    continue
+                seen_ep.add(href)
                 ep_name = self._clean(ep_inner)
                 if not ep_name:
                     ep_name = "第%02d集" % (len(eps) + 1)
-                eps.append((ep_name, ep_href))
+                eps.append((ep_name, href))
             if not eps:
                 continue
-            base, i = line_name, 2
-            while line_name in play_from:
-                line_name = "%s(%d)" % (base, i)
+            if not line:
+                line = "线路%d" % (len(play_from) + 1)
+            base, i = line, 2
+            while line in play_from:
+                line = "%s(%d)" % (base, i)
                 i += 1
-            play_from.append(line_name)
+            play_from.append(line)
             play_url.append("#".join("%s$%s" % (n, h) for n, h in eps))
 
         if not play_from:
@@ -655,14 +846,13 @@ class Spider(Spider):
             self._play_cache[play_page] = (now, res)
             return res
 
-        # 兜底：交客户端嗅探播放页
         res = {"parse": 1, "playUrl": "", "url": play_page, "header": header}
         self._play_cache[play_page] = (now, res)
         return res
 
     @staticmethod
     def _player_json(html):
-        """括号深度配对精确截取 player_aaaa JSON（正确处理嵌套的 vod_data 对象）。"""
+        """括号深度配对精确截取 player_aaaa JSON（正确处理嵌套对象）。"""
         i = html.find("player_aaaa")
         if i < 0:
             return ""
@@ -694,12 +884,10 @@ class Spider(Spider):
     def _extract_stream(self, html):
         if not html:
             return ""
-        # 1) MacCMS player_aaaa JSON（深度配对截取）
         raw = self._player_json(html)
         if raw:
             try:
                 aa = json.loads(raw.replace("\\/", "/"))
-                # encrypt 非 0 视为未直出，交兜底链路
                 if str(aa.get("encrypt", "0")) not in ("0", ""):
                     return ""
                 if aa.get("url"):
@@ -708,7 +896,6 @@ class Spider(Spider):
                 m2 = re.search(r'"url"\s*:\s*"([^"]+)"', raw)
                 if m2:
                     return m2.group(1).replace("\\/", "/")
-        # 2) 页面内裸 m3u8/mp4
         m2 = re.search(r'https?://[^"\\\s]*(?:m3u8|mp4)[^"\\\s]*', html, re.I)
         return m2.group(0) if m2 else ""
 
@@ -737,7 +924,7 @@ class Spider(Spider):
             text = rm.text if hasattr(rm, "text") else (
                 rm.content.decode("utf-8", "ignore") if hasattr(rm, "content") else "")
             if "#EXT-X-STREAM-INF" not in text:
-                return url  # 已是含分片的媒体播放列表
+                return url
             lines = [ln.strip().replace("\\/", "/") for ln in text.splitlines()]
             for i, line in enumerate(lines):
                 if line.startswith("#EXT-X-STREAM-INF"):
@@ -787,7 +974,7 @@ class Spider(Spider):
         return False
 
     def destroy(self):
-        pass
+        self._play_cache = {}
 
     def close(self):
         self.destroy()
