@@ -611,7 +611,8 @@
             "changeable": 1,
             "ext": {
                 "site": [
-                    "http://shandian.blog"
+                    "http://oo.sduc.site",
+                    "http://sd.sduc.site"
                 ]
             },
             "timeout": 60
@@ -1819,6 +1820,18 @@
             "name": "🍊剧踪影院",
             "type": 3,
             "api": "./py/剧踪影院.py"
+        },
+        {
+            "key": "七五网",
+            "name": "🍊七五网",
+            "type": 3,
+            "api": "./py/七五网.py"
+        },
+        {
+            "key": "FreeOK",
+            "name": "🌱FreeOK",
+            "type": 3,
+            "api": "./py/FreeOK.py"
         },
         {
             "key": "爬虫影视",
