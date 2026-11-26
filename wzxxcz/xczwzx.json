@@ -1375,12 +1375,6 @@
             "api": "./py/99影视TV.py"
         },
         {
-            "key": "玖月影视",
-            "name": "🌙玖月影视",
-            "type": 3,
-            "api": "./py/玖月影视.py"
-        },
-        {
             "key": "剧踪影院",
             "name": "🍊剧踪影院",
             "type": 3,
@@ -1391,6 +1385,12 @@
             "name": "🍊七五网",
             "type": 3,
             "api": "./py/七五网.py"
+        },
+        {
+            "key": "FreeOK",
+            "name": "🌱FreeOK",
+            "type": 3,
+            "api": "./py/FreeOK.py"
         },
         {
             "key": "爬虫影视",
