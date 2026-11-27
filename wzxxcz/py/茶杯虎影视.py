@@ -202,6 +202,7 @@ class Spider(Spider):
         }
         self.default_pic = DEFAULT_PIC
         self._play_cache = {}
+        self._last_search = 0.0
         self.log("init: site=%s" % self.site_url)
 
     # ---------------- 基础工具 ----------------
@@ -250,6 +251,13 @@ class Spider(Spider):
         if not pic:
             return True
         return any(k in pic for k in _PLACEHOLDER_PICS)
+
+    def _is_rate_limited(self, html):
+        """站点搜索限流提示页: 标题「系统提示」/「请不要频繁操作」/「时间间隔」。"""
+        if not html:
+            return True
+        return ("频繁操作" in html or "时间间隔" in html or
+                "系统提示" in html or "msg_jump" in html)
 
     def _fix_pic(self, pic):
         pic = self._fix_url(pic)
@@ -326,17 +334,22 @@ class Spider(Spider):
         slug = "-".join(urllib.parse.quote(x) for x in seg)
         return "/show/%s.html" % slug
 
-    def _pagecount(self, html, limit=24):
-        if not html:
+    def _build_search_url(self, key, page=1):
+        # 搜索为 14 槽: seg0=关键词, seg10=页码, 其余空段占位
+        seg = [""] * 14
+        seg[0] = key
+        seg[10] = str(page) if page and int(page) > 1 else ""
+        slug = "-".join(urllib.parse.quote(x) for x in seg)
+        return "/search/%s.html?wd=%s" % (slug, urllib.parse.quote(key))
+
+    def _pagecount(self, videos, page, limit=24):
+        """滑动窗口分页: 空页=1页; 满页视为尚有下一页; 不足一页即末页。"""
+        n = len(videos)
+        if n == 0:
             return 1
-        pages = re.findall(r'/type/\d+-(\d+)\.html', html)
-        if pages:
-            try:
-                return max(int(p) for p in pages) + 1
-            except Exception:
-                pass
-        # 本站深页重复首页, 不下发真实总页; 首页可见即单页
-        return 1
+        if n >= limit:
+            return page + 1
+        return page
 
     # ---------------- 契约: 首页 ----------------
     def homeContent(self, filter=False):
@@ -383,19 +396,21 @@ class Spider(Spider):
             year = extend.get("year") or ""
             sort = extend.get("sort") or ""
 
-            has_filter = any([ctype, area, lang, year, sort])
-            if has_filter:
-                url = self.site_url + self._build_show_url(
-                    tid, ctype, page, area=area, sort=sort, lang=lang, year=year)
-            elif page > 1:
-                url = "%s/type/%s-%d.html" % (self.site_url, tid, page)
-            else:
-                url = "%s/type/%s.html" % (self.site_url, tid)
-
+            # 主通道: show 库页(支持分页, seg8=页码); type 推荐页仅作空壳兜底
+            url = self.site_url + self._build_show_url(
+                tid, ctype, page, area=area, sort=sort, lang=lang, year=year)
             self.log("category: %s" % url)
             html = self._fetch(url)
             videos = self._extract_videos(html)
-            pagecount = self._pagecount(html)
+
+            if not videos and page == 1:
+                # 仅首页弱网空壳兜底: type 推荐页(单页, 不分页); 深页空页视为末页之后, 不回退以免重复推荐片
+                fallback = "%s/type/%s.html" % (self.site_url, tid)
+                self.log("  库页空, 兜底推荐页: %s" % fallback)
+                html2 = self._fetch(fallback)
+                videos = self._extract_videos(html2)
+
+            pagecount = self._pagecount(videos, page)
             self.log("  最终: %d 条, 总页数: %d" % (len(videos), pagecount))
 
             return {
@@ -403,7 +418,7 @@ class Spider(Spider):
                 "page": page,
                 "pagecount": pagecount,
                 "limit": 24,
-                "total": len(videos),
+                "total": len(videos) if pagecount == 1 else pagecount * 24,
             }
         except Exception as e:
             self.log("categoryContent FAIL: %s" % e)
@@ -413,18 +428,29 @@ class Spider(Spider):
     def searchContent(self, key, quick, pg="1"):
         try:
             page = int(pg) if pg else 1
-            keyword = urllib.parse.quote(key)
-            url = "%s/search/%s-------------.html?wd=%s" % (
-                self.site_url, keyword, keyword)
-            self.log("search: %s" % url)
-            html = self._fetch(url)
+            url = self.site_url + self._build_search_url(key, page)
+            # 站点搜索限 3 秒/次: 先节流到 3.05s 间隔, 命中限流提示页则等待重试
+            html = ""
+            for attempt in range(3):
+                now = time.time()
+                wait = 3.05 - (now - self._last_search)
+                if wait > 0:
+                    time.sleep(wait)
+                self._last_search = time.time()
+                self.log("search: %s (第%d次)" % (url, attempt + 1))
+                html = self._fetch(url)
+                if not self._is_rate_limited(html):
+                    break
+                self.log("  搜索限流, 等待 3.2 秒后重试")
+                time.sleep(3.2)
             videos = self._extract_videos(html)
+            pagecount = self._pagecount(videos, page)
             return {
                 "list": videos,
                 "page": page,
-                "pagecount": 1,
+                "pagecount": pagecount,
                 "limit": 24,
-                "total": len(videos),
+                "total": len(videos) if pagecount == 1 else pagecount * 24,
             }
         except Exception as e:
             self.log("searchContent FAIL: %s" % e)
