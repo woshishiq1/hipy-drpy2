@@ -1464,27 +1464,16 @@
             "api": "./py/猎手.py"
         },
         {
-            "key": "星河",
-            "name": "🌌星河影视",
+            "key": "星空影视",
+            "name": "🌌星空影视",
             "type": 3,
-            "api": "./js/get.js",
-            "ext": {
-                "host": "http://110.42.67.130:1226",
-                "key": "kj37zs29q22jk96t",
-                "init": "V122",
-                "api": 2,
-                "ua": "okhttp/3.10.0"
-            }
+            "api": "./py/星空影视.py"
         },
         {
-            "key": "戒",
+            "key": "视界影视",
             "name": "💡视界影视",
             "type": 3,
-            "api": "./js/jys.js",
-            "searchable": 1,
-            "quickSearch": 0,
-            "filterable": 0,
-            "changeable": 0
+            "api": "./py/视界影视.py"
         },
         {
             "key": "师兄",
@@ -1661,16 +1650,6 @@
             "name": "🥯韩圈影视",
             "type": 3,
             "api": "csp_Hxq",
-            "searchable": 1,
-            "quickSearch": 1,
-            "filterable": 1
-        },
-        {
-            "key": "乌云影视",
-            "name": "☁️乌云影视",
-            "type": 4,
-            "api": "https://api.uumnet.com/tvbox/php/wooyun.php",
-            "playUrl": "",
             "searchable": 1,
             "quickSearch": 1,
             "filterable": 1
@@ -1917,22 +1896,6 @@
                 "排序": "时间&人气&评分",
                 "排序值": "time&hits&score"
             }
-        },
-        {
-            "key": "茉莉",
-            "name": "🌸茉莉影视",
-            "type": 3,
-            "api": "csp_HDmoli",
-            "searchable": 1,
-            "quickSearch": 1,
-            "filterable": 1,
-            "ext": {
-                "site": [
-                    "https://www.hdmoli.me",
-                    "https://www.hdmoli.org"
-                ]
-            },
-            "timeout": 60
         },
         {
             "key": "华数",

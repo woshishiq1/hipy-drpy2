@@ -1887,14 +1887,10 @@
             "api": "./py/星空影视.py"
         },
         {
-            "key": "戒",
+            "key": "视界影视",
             "name": "💡视界影视",
             "type": 3,
-            "api": "./js/jys.js",
-            "searchable": 1,
-            "quickSearch": 0,
-            "filterable": 0,
-            "changeable": 0
+            "api": "./py/视界影视.py"
         },
         {
             "key": "师兄",
@@ -2071,16 +2067,6 @@
             "name": "🥯韩圈影视",
             "type": 3,
             "api": "csp_Hxq",
-            "searchable": 1,
-            "quickSearch": 1,
-            "filterable": 1
-        },
-        {
-            "key": "乌云影视",
-            "name": "☁️乌云影视",
-            "type": 4,
-            "api": "https://api.uumnet.com/tvbox/php/wooyun.php",
-            "playUrl": "",
             "searchable": 1,
             "quickSearch": 1,
             "filterable": 1
@@ -2364,15 +2350,10 @@
             }
         },
         {
-            "key": "cat_剧迷网",
-            "name": "🥇剧迷影视",
+            "key": "Gimy劇迷",
+            "name": "🍊Gimy劇迷",
             "type": 3,
-            "api": "./js/高清剧迷.js",
-            "style": {
-                "type": "rect",
-                "ratio": 1
-            },
-            "changeable": 1
+            "api": "./py/Gimy劇迷.py"
         },
         {
             "key": "饭团影视1",
